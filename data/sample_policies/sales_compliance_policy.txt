@@ -1,0 +1,87 @@
+ACME CORP — SALES MESSAGING & COMPLIANCE POLICY
+Version 2.3 | Effective: January 2025 | Approved by: Legal & Compliance
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 1: APPROVED MESSAGING GUIDELINES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1.1 Sales representatives MUST use only approved claims from the current
+    messaging guide when presenting to prospects or customers.
+
+1.2 All quantitative claims (speed improvements, cost savings, accuracy rates)
+    MUST be accompanied by methodology and sample size. Claims without
+    supporting data must not be presented as established facts.
+
+1.3 Comparative claims against named competitors require explicit written
+    approval from the Marketing Legal team before use.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 2: AUTOMATION AND WORKFLOW CLAIMS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+2.1 PROHIBITED: Representatives may NOT state the product is "fully automated"
+    or requires "no manual steps" without qualification.
+
+2.2 REQUIRED QUALIFIER: Any automation claim must acknowledge that:
+    - Edge cases and transactions above $10,000 in value require manual review
+    - Regulatory-flagged items are automatically queued for human approval
+    - The system augments human judgment; it does not replace it
+
+2.3 Approved phrasing: "Our platform automates standard workflows, with
+    automatic flagging of exceptions for your team's review."
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 3: DATA PRIVACY AND SECURITY CLAIMS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+3.1 GDPR COMPLIANCE: The product is designed to support GDPR-compatible
+    deployments. Representatives must not state the product is "GDPR-compliant"
+    without clarifying that compliance depends on the customer's own configuration,
+    deployment context, and data processing obligations.
+
+3.2 REQUIRED: A Data Processing Addendum (DPA) must be offered to any EU
+    customer or prospect. The DPA template is available from Legal.
+
+3.3 ON-DEVICE CLAIMS: If the product offers on-device processing as an option,
+    representatives must clarify that cloud fallback features, if available,
+    are opt-in and disabled by default. Claims of absolute data locality
+    must not be made if any cloud component exists anywhere in the product.
+
+3.4 PROHIBITED: Claims of "zero data retention", "no data ever leaves",
+    "completely private" require verification by the Security team before use.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 4: PERFORMANCE AND ACCURACY CLAIMS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+4.1 Accuracy rates stated in sales presentations must match the most recent
+    validated evaluation report. Current approved figures:
+    - English-language claim extraction: 91% (±3%) on internal benchmark
+    - Multi-language support: accuracy varies; do not cite a single global figure
+
+4.2 Speed/performance claims require:
+    - Hardware specification (CPU/GPU model, RAM)
+    - Test dataset description
+    - Measurement methodology
+
+4.3 PROHIBITED: "10x faster", "99% accurate", "instant" without qualification.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 5: CERTIFICATION AND COMPLIANCE BADGE CLAIMS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+5.1 SOC 2 Type II audit is in progress. Until the audit is complete and
+    the report issued, representatives must NOT claim SOC 2 compliance.
+    Approved phrasing: "We are currently undergoing SOC 2 Type II audit,
+    expected completion Q3 2025."
+
+5.2 ISO 27001 certification is not yet in place. Do not reference it.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 6: ESCALATION AND APPROVAL
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+6.1 Any claim not explicitly covered by this policy requires pre-approval
+    from Legal & Compliance before use in a sales context.
+
+6.2 Questions: compliance@acmecorp.example.com

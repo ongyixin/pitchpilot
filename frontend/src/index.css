@@ -1,0 +1,112 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  *, *::before, *::after {
+    box-sizing: border-box;
+  }
+
+  html {
+    /* Raw, unsmoothed rendering — intentional for brutalist aesthetic */
+    -webkit-font-smoothing: auto;
+    -moz-osx-font-smoothing: auto;
+  }
+
+  body {
+    background-color: #F2EDE3;
+    color: #1A1A1A;
+    font-family: 'Courier Prime', Courier, monospace;
+    margin: 0;
+    padding: 0;
+  }
+
+  /* Thick, visible scrollbars — part of the brutalist aesthetic */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: #EAE3D1;
+    border-left: 2px solid #1A1A1A;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #1A1A1A;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #CC0018;
+  }
+
+  ::-webkit-scrollbar-corner {
+    background: #EAE3D1;
+    border: 2px solid #1A1A1A;
+  }
+}
+
+@layer utilities {
+  /* Bebas Neue display font */
+  .font-display {
+    font-family: 'Bebas Neue', Impact, sans-serif;
+  }
+
+  /* Thick rule divider */
+  .rule-thick {
+    border-bottom: 3px solid #1A1A1A;
+  }
+
+  .rule-medium {
+    border-bottom: 2px solid #1A1A1A;
+  }
+
+  /* Hard offset shadow lift on hover */
+  .brutal-hover {
+    transition: transform 0.08s ease, box-shadow 0.08s ease;
+  }
+
+  .brutal-hover:hover {
+    transform: translate(-2px, -2px);
+    box-shadow: 5px 5px 0px #1A1A1A;
+  }
+
+  .brutal-hover:active {
+    transform: translate(0, 0);
+    box-shadow: 2px 2px 0px #1A1A1A;
+  }
+
+  /* Agent badge overrides — solid fills for editorial style */
+  .badge-coach {
+    background-color: #8C6500;
+    color: #F2EDE3;
+    border: 2px solid #8C6500;
+  }
+
+  .badge-compliance {
+    background-color: #CC0018;
+    color: #F2EDE3;
+    border: 2px solid #CC0018;
+  }
+
+  .badge-persona {
+    background-color: #6B18CC;
+    color: #F2EDE3;
+    border: 2px solid #6B18CC;
+  }
+
+  /* Landing page agent accent borders */
+  .border-accent-amber { border-color: #8C6500; }
+  .border-accent-red   { border-color: #CC0018; }
+  .border-accent-purple { border-color: #6B18CC; }
+
+  /* Landing page agent accent text */
+  .text-accent-purple { color: #6B18CC; }
+
+  /* Landing page accent backgrounds */
+  .bg-accent-amber  { background-color: #8C6500; }
+  .bg-accent-purple { background-color: #6B18CC; }
+
+  /* Smooth scroll for anchor links */
+  html { scroll-behavior: smooth; }
+}

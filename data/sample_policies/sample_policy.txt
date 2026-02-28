@@ -1,0 +1,66 @@
+ACME CORP — PRODUCT CLAIMS AND COMPLIANCE POLICY
+Version 2.4 | Effective Date: January 1, 2026
+
+1. AUTOMATION CLAIMS
+
+1.1 Products or features described as "automated" must include a disclosure
+    when manual review or human oversight is required in any operational path.
+
+1.2 The phrase "fully automated" is prohibited unless the product processes
+    100% of cases without human intervention, as verified by QA sign-off.
+
+1.3 Acceptable alternative: "automated for standard cases; edge cases are
+    reviewed by our compliance team within 24 hours."
+
+2. APPROVAL AND PROCESSING TIME
+
+2.1 Claims of "instant approval" must be qualified with the expected time
+    range (e.g., "typically within seconds for standard submissions").
+
+2.2 "Zero manual steps" claims are only permissible for products that have
+    achieved Tier-1 automation certification from the Product Operations team.
+
+2.3 For uncertified products, use: "minimal manual intervention required."
+
+3. ACCURACY AND PERFORMANCE METRICS
+
+3.1 All accuracy figures used in sales or marketing materials must be
+    sourced from a published internal benchmark report, referenced by ID.
+
+3.2 Claims of "99%" or higher accuracy require executive sign-off and must
+    include the test dataset description and date.
+
+3.3 Contextualise accuracy: state the task, dataset size, and timeframe.
+
+4. PRIVACY AND DATA HANDLING
+
+4.1 "On-device" or "private by design" claims are valid only if the product
+    processes all data locally without transmitting customer data externally.
+
+4.2 If any optional cloud functionality exists (even as a fallback), the
+    privacy claim must be qualified: "on-device by default; cloud features
+    are opt-in and clearly disclosed."
+
+4.3 "Data never leaves the device" is a strong claim requiring legal review
+    before use in customer-facing materials.
+
+5. COMPARISON CLAIMS
+
+5.1 Comparative claims (e.g., "faster than X", "more accurate than Y") must
+    reference a specific, dated benchmark and be approved by Product Marketing.
+
+5.2 Unnamed competitor comparisons ("unlike other solutions") are permitted
+    only if the comparison is verifiable by an independent third party.
+
+6. FINANCIAL PROJECTIONS
+
+6.1 ROI claims must cite the assumption set and methodology.
+
+6.2 "Guaranteed ROI" language is prohibited without legal review.
+
+7. COMPLIANCE REVIEW PROCESS
+
+7.1 All new claims must be submitted to compliance@acmecorp.example.com
+    at least 5 business days before use in customer-facing contexts.
+
+7.2 Urgent reviews (< 24h) require VP-level sponsorship.

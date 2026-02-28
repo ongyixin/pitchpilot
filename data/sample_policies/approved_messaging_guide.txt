@@ -1,0 +1,95 @@
+APPROVED MESSAGING GUIDE — PitchPilot Sales & Marketing
+Version 1.2 | Q1 2026
+
+This guide provides approved language for use in pitches, demos,
+and sales materials. Always use these phrasings to stay compliant
+with Enterprise Data Policy v2.4.
+
+
+==============================================================
+PRIVACY AND ON-DEVICE MESSAGING
+==============================================================
+
+APPROVED:
+✓ "Private by default — all processing runs on your device."
+✓ "On-device inference means your rehearsal recordings never leave your machine."
+✓ "Sensitive pitch content stays local. No cloud upload unless you opt in."
+✓ "Built for confidential materials: slides, spoken strategy, internal roadmaps."
+
+NOT APPROVED:
+✗ "Fully private."
+✗ "Data never leaves your device." (use "by default" qualifier)
+✗ "No cloud at all." (optional cloud sync exists)
+
+
+==============================================================
+AUTOMATION MESSAGING
+==============================================================
+
+APPROVED:
+✓ "Automated for standard cases, with optional human review for edge cases."
+✓ "AI-assisted analysis that flags issues for your review."
+✓ "Surfaces potential compliance issues — your team makes the final call."
+✓ "Automated claim extraction and routing; human-readable output."
+
+NOT APPROVED:
+✗ "Fully automated — no manual review required."
+✗ "Zero human effort required."
+✗ "Replace your compliance team."
+
+
+==============================================================
+PERFORMANCE AND SPEED CLAIMS
+==============================================================
+
+APPROVED (with citations):
+✓ "Processes a 5-minute rehearsal video in under 90 seconds on M2 MacBook Pro."
+✓ "Sub-100ms FunctionGemma routing latency (270M params, local inference)."
+✓ "Gemma 3 4B reasoning at 4.2 tokens/sec on Apple Silicon."
+
+PENDING APPROVAL (do not use until benchmark refresh complete):
+⚠ "3× faster than [Competitor]" — requires updated MLPerf citation
+
+
+==============================================================
+ON-DEVICE AI DIFFERENTIATION
+==============================================================
+
+KEY DIFFERENTIATOR (use early and often in pitches):
+Three reasons on-device matters for pitch preparation:
+1. Privacy: Pitches contain unreleased product info, sales strategy,
+   and customer data that cannot go to third-party cloud APIs.
+2. Latency: Real-time coaching requires < 200ms feedback loops.
+   Cloud round-trips add 300–500ms for typical LLM APIs.
+3. Trust: Users grant camera, mic, and screen access more willingly
+   when they can verify data stays local.
+
+
+==============================================================
+PERSONA HANDLING GUIDANCE
+==============================================================
+
+When a skeptical investor asks "Why not just use ChatGPT?":
+
+Recommended answer:
+"Three key differences: (1) On-device — your pitch content never reaches
+OpenAI or any third-party server. (2) Multimodal — we analyze video, audio,
+and slides together, not just a text dump. (3) Specialized — our agents are
+fine-tuned for pitch evaluation, compliance review, and persona simulation,
+not general conversation. A generic wrapper still sends your data to the cloud."
+
+
+==============================================================
+SLA CLAIMS
+==============================================================
+
+APPROVED for standard tier:
+✓ "99.5 % monthly uptime SLA."
+✓ "4-hour critical incident response."
+
+APPROVED for premium tier (after SLA Addendum v2 signed):
+✓ "99.9 % monthly uptime SLA."
+✓ "1-hour critical incident response."
+
+NOT APPROVED without addendum:
+✗ "99.9 % uptime" to standard tier prospects.

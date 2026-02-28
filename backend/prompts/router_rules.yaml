@@ -1,0 +1,52 @@
+# FunctionGemma Router Rules
+# ──────────────────────────────────────────────────────────────────────────
+# These rules map claim types and keyword patterns to tool function names.
+# Used when ROUTER_USE_RULES=true (the default until fine-tuning is complete).
+# Edit this file to adjust routing logic without touching code.
+
+# Claim-type → list of functions to dispatch
+claim_type_routing:
+  product:
+    - coach_presentation
+    - check_compliance
+    - simulate_persona
+  compliance_sensitive:
+    - check_compliance
+    - simulate_persona
+  technical:
+    - coach_presentation
+    - simulate_persona
+  comparison:
+    - check_compliance
+    - simulate_persona
+  general:
+    - coach_presentation
+
+# Keyword patterns → additional functions to add
+# Patterns are matched case-insensitively against the claim text.
+keyword_routing:
+  - pattern: "automated|automatic|autonomous|fully automated|instant"
+    add_functions:
+      - check_compliance
+  - pattern: "privacy|private|secure|encrypted|GDPR|compliant|no data|on-device"
+    add_functions:
+      - check_compliance
+  - pattern: "100%|always|never|guaranteed|zero downtime|perfect"
+    add_functions:
+      - check_compliance
+  - pattern: "AI|machine learning|model|inference|on-device|local"
+    add_functions:
+      - simulate_persona
+  - pattern: "ROI|revenue|cost|savings|faster|efficiency|10x"
+    add_functions:
+      - simulate_persona
+      - check_compliance
+  - pattern: "competitor|alternative|unlike|better than|compared to"
+    add_functions:
+      - check_compliance
+      - simulate_persona
+
+# Functions that should always run for every session (regardless of claims)
+always_run:
+  - score_readiness
+  - tag_timestamp

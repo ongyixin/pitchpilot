@@ -1,0 +1,145 @@
+{
+  "session_id": "demo-session-0000",
+  "video_filename": "demo_pitch.mp4",
+  "policy_filenames": ["enterprise_data_policy.pdf", "approved_messaging_guide.pdf"],
+  "personas": ["Skeptical Investor", "Technical Reviewer", "Compliance Officer"],
+  "status": "complete",
+  "progress": 100,
+  "progress_message": "Analysis complete",
+  "created_at": "2026-02-28T10:00:00Z",
+  "score": {
+    "overall": 72,
+    "dimensions": [
+      { "dimension": "Clarity",       "score": 78, "rationale": "Structure and flow are solid but two transitions need bridging." },
+      { "dimension": "Compliance",    "score": 61, "rationale": "Two critical policy conflicts found; addressable with rewording." },
+      { "dimension": "Defensibility", "score": 68, "rationale": "Speed and uptime claims need benchmark citations." },
+      { "dimension": "Persuasiveness","score": 82, "rationale": "Opening hook and model specificity are strong trust signals." }
+    ],
+    "priority_fixes": [
+      "Fix the 'fully automated' claim — it directly contradicts Enterprise Data Policy §3.2.",
+      "Anchor the '3× faster' metric to a named competitor and public benchmark.",
+      "Qualify the privacy claim: add 'by default' to cover the opt-in cloud sync.",
+      "Add a bridge sentence between the problem slide and the demo."
+    ]
+  },
+  "findings": [
+    {
+      "id": "f-001", "agent": "coach", "severity": "info",
+      "title": "Strong opening hook",
+      "detail": "The opening anecdote about a failed product demo was vivid and relatable. It established stakes immediately.",
+      "suggestion": null, "timestamp": 5.0, "claim_id": null, "policy_reference": null, "persona": null
+    },
+    {
+      "id": "f-002", "agent": "coach", "severity": "warning",
+      "title": "Abrupt transition after problem statement",
+      "detail": "The transition from the problem slide to the demo felt rushed. There was no bridge sentence to orient the audience.",
+      "suggestion": "Add a one-sentence recap: 'That's the problem — here's how PitchPilot solves it.'",
+      "timestamp": 28.0, "claim_id": null, "policy_reference": null, "persona": null
+    },
+    {
+      "id": "f-003", "agent": "coach", "severity": "warning",
+      "title": "Solution slide overloaded with jargon",
+      "detail": "Slide 3 uses 'multi-agent orchestration', 'LoRA fine-tuning', and 'tokenised function dispatch' without explanation.",
+      "suggestion": "Lead with the outcome ('analyzes your pitch in 90 seconds') before explaining the mechanism.",
+      "timestamp": 118.0, "claim_id": null, "policy_reference": null, "persona": null
+    },
+    {
+      "id": "f-004", "agent": "coach", "severity": "critical",
+      "title": "Speed metric lacks benchmark context",
+      "detail": "'3× faster' is a compelling claim but the baseline is never stated. Sophisticated audiences will dismiss unanchored comparisons.",
+      "suggestion": "Name the competitor and link to a reproducible benchmark. E.g. 'vs. GPT-4o on the MLPerf inference suite'.",
+      "timestamp": 155.0, "claim_id": "c-004", "policy_reference": null, "persona": null
+    },
+    {
+      "id": "f-005", "agent": "compliance", "severity": "critical",
+      "title": "'Fully automated' conflicts with policy §3.2",
+      "detail": "Your enterprise data-handling policy (section 3.2) requires human review for model outputs above a confidence threshold of 0.95.",
+      "suggestion": "Rephrase to: 'Automated with optional human-in-the-loop review for high-stakes decisions.'",
+      "timestamp": 34.5, "claim_id": "c-001",
+      "policy_reference": "Enterprise Data Policy §3.2 — Human Oversight Requirement", "persona": null
+    },
+    {
+      "id": "f-006", "agent": "compliance", "severity": "warning",
+      "title": "99.9 % uptime SLA not reflected in current contract",
+      "detail": "The standard enterprise contract offers 99.5 % SLA. Promising 99.9 % during a pitch creates a potential contractual liability.",
+      "suggestion": "Either reference the premium-tier SLA or say 'up to 99.9 %' with a footnote.",
+      "timestamp": 72.0, "claim_id": "c-002",
+      "policy_reference": "SLA Addendum v2 — Enterprise Standard Tier", "persona": null
+    },
+    {
+      "id": "f-007", "agent": "compliance", "severity": "warning",
+      "title": "'Nothing leaves your network' needs qualification",
+      "detail": "Architecture slide 8 shows an optional cloud-sync feature. The blanket privacy claim may be technically false for customers who enable it.",
+      "suggestion": "Add 'by default' and mention the opt-in cloud sync explicitly.",
+      "timestamp": 112.0, "claim_id": "c-003",
+      "policy_reference": "Privacy Disclosure Policy §1.1 — Accurate Representation", "persona": null
+    },
+    {
+      "id": "f-008", "agent": "persona", "severity": "warning",
+      "title": "Skeptical Investor: differentiation is unclear",
+      "detail": "A skeptical investor would immediately ask how this differs from a well-prompted ChatGPT plus screen recording.",
+      "suggestion": "Lead with the on-device / privacy differentiator earlier and repeat it at close.",
+      "timestamp": 90.0, "claim_id": null, "policy_reference": null, "persona": "Skeptical Investor"
+    },
+    {
+      "id": "f-009", "agent": "persona", "severity": "info",
+      "title": "Technical Reviewer: model card details appreciated",
+      "detail": "The Technical Reviewer persona found the mention of specific model names (Gemma 3n, FunctionGemma) credible and reassuring.",
+      "suggestion": null, "timestamp": 130.0, "claim_id": null, "policy_reference": null, "persona": "Technical Reviewer"
+    },
+    {
+      "id": "f-010", "agent": "persona", "severity": "warning",
+      "title": "Compliance Officer: data retention policy missing",
+      "detail": "No mention of how long rehearsal recordings are retained locally. A Compliance Officer would flag this immediately.",
+      "suggestion": "Add one bullet on local-only storage, auto-deletion policy, and no cloud upload.",
+      "timestamp": 175.0, "claim_id": null, "policy_reference": null, "persona": "Compliance Officer"
+    }
+  ],
+  "persona_questions": [
+    {
+      "id": "q-001", "persona": "Skeptical Investor", "difficulty": "critical",
+      "question": "How is this different from asking ChatGPT to review my slide deck?",
+      "follow_up": "And if the answer is 'on-device', why can't a compliance-aware wrapper around GPT-4o do the same thing?",
+      "timestamp": 90.0
+    },
+    {
+      "id": "q-002", "persona": "Skeptical Investor", "difficulty": "warning",
+      "question": "What does '3× faster' mean, and is there a published benchmark?",
+      "timestamp": 155.0
+    },
+    {
+      "id": "q-003", "persona": "Compliance Officer", "difficulty": "critical",
+      "question": "Your slides say 'no data leaves the device' but slide 8 shows a cloud sync icon — can you clarify?",
+      "timestamp": 112.0
+    },
+    {
+      "id": "q-004", "persona": "Compliance Officer", "difficulty": "warning",
+      "question": "Has your automated decision pipeline been reviewed against GDPR Article 22?",
+      "timestamp": null
+    },
+    {
+      "id": "q-005", "persona": "Technical Reviewer", "difficulty": "warning",
+      "question": "What happens when Gemma 3n hallucinates during OCR — is there a confidence threshold?",
+      "timestamp": 50.0
+    }
+  ],
+  "claims": [
+    {
+      "id": "c-001", "text": "Our platform is fully automated — no manual review required.",
+      "claim_type": "feature", "timestamp": 34.5, "source": "transcript", "confidence": 0.93
+    },
+    {
+      "id": "c-002", "text": "We achieve 99.9 % uptime across all enterprise tiers.",
+      "claim_type": "metric", "timestamp": 72.0, "source": "slide", "slide_number": 4, "confidence": 0.88
+    },
+    {
+      "id": "c-003", "text": "All customer data is stored exclusively on-device — nothing leaves your network.",
+      "claim_type": "privacy", "timestamp": 112.0, "source": "both", "slide_number": 6, "confidence": 0.91
+    },
+    {
+      "id": "c-004", "text": "We outperform every competitor by 3× on inference speed.",
+      "claim_type": "comparison", "timestamp": 155.0, "source": "transcript", "confidence": 0.80
+    }
+  ],
+  "summary": "Overall readiness is 72/100. The pitch has a strong hook and credible technical specificity, but two compliance conflicts need resolution before presenting to an enterprise buyer. The privacy and automation claims are the highest-risk items. Prepare for the ChatGPT differentiation question — it will come from every audience."
+}

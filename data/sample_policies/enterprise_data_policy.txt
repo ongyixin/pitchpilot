@@ -1,0 +1,108 @@
+ENTERPRISE DATA HANDLING POLICY
+Version 2.4 | Effective January 2026
+
+==============================================================
+SECTION 1 — DATA PRIVACY AND REPRESENTATION
+==============================================================
+
+§1.1  Accurate Representation of Data Storage
+All customer-facing communications, presentations, and sales materials must
+accurately represent how customer data is stored, processed, and transmitted.
+
+Prohibited language:
+- Absolute claims such as "data never leaves your device" or "fully private"
+  unless the product architecture unconditionally guarantees this under ALL
+  operating modes, including optional or default-enabled features.
+
+Required qualifiers:
+- When on-device processing is available but optional, use: "private by default"
+  or "on-device when configured in local mode."
+- When any feature transmits data externally, this must be disclosed at first
+  mention in any sales context.
+
+§1.2  Data Retention Disclosure
+All sales materials must include or reference the standard data retention
+schedule. Minimum required disclosures:
+- Local recordings are stored only on the user's device.
+- Automatic deletion is configurable (default: 30 days).
+- No data is transmitted to company servers without explicit user opt-in.
+
+
+==============================================================
+SECTION 2 — AUTOMATION CLAIMS
+==============================================================
+
+§2.1  Definition of "Fully Automated"
+The company products may not be represented as "fully automated" in any
+sales presentation, pitch deck, or demo without qualification.
+
+Standard qualifier: "Automated for standard cases; edge cases are flagged
+for human review per company policy."
+
+§3.2  Human Oversight Requirement
+Any AI-driven decision or output with a model confidence score exceeding
+0.95, or any output that affects financial, legal, or compliance domains,
+MUST be routed to a human reviewer before delivery to end customers.
+
+This requirement applies to:
+- Compliance assessments
+- Risk scoring outputs
+- Automated approval decisions
+- Any output that a customer could rely on as a final determination
+
+Permitted claim: "AI-assisted with optional human-in-the-loop review."
+Prohibited claim: "Fully automated — no manual review required."
+
+
+==============================================================
+SECTION 3 — SERVICE LEVEL AGREEMENTS
+==============================================================
+
+§3.1  Standard Enterprise SLA
+The standard enterprise tier guarantees:
+- 99.5 % monthly uptime
+- < 200 ms P95 API response time
+- 4-hour critical incident response
+
+§3.2  Premium Enterprise SLA (requires separate addendum)
+Available on request for customers with >1000 MAU or enterprise contract
+value exceeding $250k ARR:
+- 99.9 % monthly uptime
+- < 100 ms P95 API response time
+- 1-hour critical incident response
+
+IMPORTANT: The 99.9 % SLA figure may only be cited in sales presentations
+when the customer has signed the SLA Addendum v2. Quoting 99.9 % uptime
+to customers on the standard tier creates contractual liability.
+
+
+==============================================================
+SECTION 4 — COMPETITIVE CLAIMS
+==============================================================
+
+§4.1  Benchmark Requirements
+Any speed, accuracy, or performance comparison claim must:
+1. Name the specific competitor product and version being compared.
+2. Reference a publicly reproducible benchmark or internal test methodology.
+3. Include the test date (benchmarks older than 12 months require a
+   refresh before use in sales materials).
+
+Prohibited: "X times faster than competitors" (unanchored)
+Permitted: "X times faster than [Competitor] on [benchmark] (tested MM/YYYY)"
+
+
+==============================================================
+SECTION 5 — REGULATORY COMPLIANCE
+==============================================================
+
+§5.1  GDPR Article 22 — Automated Decision-Making
+Any product feature that constitutes automated decision-making with legal
+or similarly significant effects must include:
+- Explicit disclosure to affected data subjects
+- A mechanism for human review on request
+- Documentation in the privacy policy
+
+§5.2  Disclaimer Requirements
+All demos or pitches involving AI-generated assessments must include:
+"AI outputs are provided as suggestions for human review and do not
+constitute legal, compliance, or professional advice."
