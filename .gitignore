@@ -87,6 +87,7 @@ backend/reports/
 backend/test_outputs/
 backend/sessions/
 sample_outputs/
+data/sessions/
 
 # ── Logs ───────────────────────────────────────────────────────────────────────
 *.log

@@ -175,12 +175,15 @@ def save_video_file(
     if session_id is None:
         session_id = str(uuid.uuid4())
 
-    src = Path(src_path)
+    src = Path(src_path).resolve()
     sess_dir = _session_dir(session_id)
-    dest = sess_dir / f"video{src.suffix}"
+    dest = (sess_dir / f"video{src.suffix}").resolve()
 
-    shutil.copy2(src, dest)
-    logger.info(f"[video] Copied {src} -> {dest}")
+    if src != dest:
+        shutil.copy2(src, dest)
+        logger.info(f"[video] Copied {src} -> {dest}")
+    else:
+        logger.info(f"[video] Video already in session directory: {dest}")
 
     return _probe_video(str(dest), session_id, src.name)
 

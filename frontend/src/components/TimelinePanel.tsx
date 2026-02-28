@@ -18,10 +18,9 @@ interface Props {
 }
 
 const MARKER_COLOR: Record<string, string> = {
-  red: 'bg-accent-red border-accent-red',
-  yellow: 'bg-marker-yellow border-marker-yellow',
-  blue: 'bg-accent-blue border-accent-blue',
-  purple: 'bg-accent-purple border-accent-purple',
+  compliance: 'bg-accent-red border-accent-red',
+  coach: 'bg-marker-yellow border-marker-yellow',
+  persona: 'bg-accent-purple border-accent-purple',
 };
 
 const LEGEND = [
@@ -80,7 +79,7 @@ export function TimelinePanel({ annotations, duration, currentTime, onSeek, onSe
         {/* Annotation markers — square, not circular */}
         {annotations.map((ann, i) => {
           const left = positionPct(ann.timestamp);
-          const colorCls = MARKER_COLOR[ann.color] ?? 'bg-text-muted border-text-muted';
+          const colorCls = MARKER_COLOR[ann.category] ?? 'bg-text-muted border-text-muted';
           return (
             <button
               key={`${ann.finding_id}-${i}`}

@@ -13,7 +13,31 @@
 
 export type SessionStatus = "pending" | "processing" | "complete" | "failed";
 
-export type SessionMode = "upload" | "live";
+/**
+ * Three canonical presentation modes.
+ *
+ * "upload" and "live" are kept for backward compatibility.
+ * Use "review", "live_in_room", and "live_remote" for new code.
+ *
+ * Backend mapping:
+ *   review       → SessionMode.REVIEW  (post-hoc analysis, video upload)
+ *   live_in_room → SessionMode.LIVE_IN_ROOM  (face-to-face, earpiece cues)
+ *   live_remote  → SessionMode.LIVE_REMOTE   (virtual demo, on-screen overlay)
+ */
+export type SessionMode =
+  | "upload"       // legacy alias for review
+  | "live"         // legacy alias for live sessions
+  | "review"       // canonical: post-hoc rehearsal analysis
+  | "live_in_room" // canonical: face-to-face earpiece coaching
+  | "live_remote"; // canonical: remote demo presenter overlay
+
+export function isLiveMode(mode: SessionMode): boolean {
+  return mode === "live" || mode === "live_in_room" || mode === "live_remote";
+}
+
+export function isReviewMode(mode: SessionMode): boolean {
+  return mode === "upload" || mode === "review";
+}
 
 export type AgentType = "coach" | "compliance" | "persona";
 
@@ -65,6 +89,8 @@ export interface Finding {
   persona?: string;
   /** True when finding was produced during a live session */
   live?: boolean;
+  /** 3-6 word earpiece cue phrase (live_in_room mode) */
+  cue_hint?: string;
 }
 
 export interface TimelineAnnotation {
@@ -109,6 +135,14 @@ export interface ReadinessReport {
   claims: Claim[];
   summary: string;
   created_at: string;
+  /** Present on reports produced by live sessions; absent for review/upload mode */
+  session_mode?: string;
+  /** Duration of the live session in seconds */
+  session_duration_seconds?: number;
+  /** Number of earpiece cues (in-room) or overlay cards (remote) delivered live */
+  live_cues_count?: number;
+  /** Post-hoc narrative of what happened during the live session */
+  live_session_summary?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -176,7 +210,13 @@ export type LiveMessageType =
   | "finalizing"
   | "session_complete"
   | "error"
-  | "pong";
+  | "pong"
+  // live_in_room
+  | "earpiece_cue"
+  // live_remote
+  | "teleprompter"
+  | "objection_prep"
+  | "script_suggestion";
 
 export interface LiveTranscriptSegment {
   text: string;
@@ -193,9 +233,60 @@ export interface LiveNudge {
   id: string;
 }
 
+// ---------------------------------------------------------------------------
+// live_in_room — earpiece cue
+// ---------------------------------------------------------------------------
+
+export interface EarpieceCue {
+  id: string;
+  text: string;
+  /** base64 audio blob or null (text-only fallback) */
+  audio_b64: string | null;
+  priority: Severity;
+  category: string;
+  elapsed: number;
+}
+
+// ---------------------------------------------------------------------------
+// live_remote — presenter overlay payloads
+// ---------------------------------------------------------------------------
+
+export interface TeleprompterUpdate {
+  points: string[];
+  slide_context: string;
+  elapsed: number;
+}
+
+export interface ObjectionCard {
+  question: string;
+  suggested_answer: string;
+  persona?: string;
+  difficulty: Severity;
+}
+
+export interface ObjectionPrepUpdate {
+  questions: ObjectionCard[];
+  elapsed: number;
+}
+
+export interface ScriptSuggestion {
+  id: string;
+  original: string;
+  alternative: string;
+  reason: string;
+  agent: AgentType;
+  elapsed: number;
+}
+
+// ---------------------------------------------------------------------------
+// Generic live feed message (union of all WS message shapes)
+// ---------------------------------------------------------------------------
+
 export interface LiveFeedMessage {
   type: LiveMessageType;
   session_id?: string;
+  mode?: SessionMode;
+  // shared
   finding?: Finding;
   segments?: LiveTranscriptSegment[];
   agent?: AgentType;
@@ -203,4 +294,18 @@ export interface LiveFeedMessage {
   suggestion?: string;
   severity?: Severity;
   elapsed?: number;
+  // earpiece_cue
+  text?: string;
+  audio_b64?: string | null;
+  priority?: Severity;
+  category?: string;
+  // teleprompter
+  points?: string[];
+  slide_context?: string;
+  // objection_prep
+  questions?: ObjectionCard[];
+  // script_suggestion
+  original?: string;
+  alternative?: string;
+  reason?: string;
 }

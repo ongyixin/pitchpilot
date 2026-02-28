@@ -1,10 +1,3 @@
-/**
- * ReportSummary — editorial column layout for the results view.
- *
- * Brutalist redesign: bold Bebas Neue section headers, numbered priority
- * fixes with large red numbers, persona question cards with solid badges.
- */
-
 import { useState } from 'react';
 import { Clock } from 'lucide-react';
 import { cn, formatTime } from '@/lib/utils';
@@ -17,15 +10,15 @@ const PERSONA_BADGE: Record<string, string> = {
 };
 
 const DIFFICULTY_LABEL: Record<string, string> = {
-  hard: 'HARD',
-  medium: 'MED',
-  easy: 'EASY',
+  critical: 'HARD',
+  warning: 'MED',
+  info: 'EASY',
 };
 
 const DIFFICULTY_COLOR: Record<string, string> = {
-  hard: 'text-accent-red border-accent-red',
-  medium: 'text-accent-amber border-accent-amber',
-  easy: 'text-text-secondary border-text-muted',
+  critical: 'text-accent-red border-accent-red',
+  warning: 'text-accent-amber border-accent-amber',
+  info: 'text-text-secondary border-text-muted',
 };
 
 function PersonaQuestionCard({ q, expanded, onToggle }: {
@@ -64,12 +57,12 @@ function PersonaQuestionCard({ q, expanded, onToggle }: {
         </span>
       </div>
 
-      {expanded && q.suggested_answer && (
+      {expanded && q.follow_up && (
         <div className="px-4 pb-4 bg-bg-elevated border-t-2 border-bg-border">
           <p className="font-display text-base tracking-wider text-text-primary mt-3 mb-1">
-            SUGGESTED ANSWER
+            FOLLOW-UP
           </p>
-          <p className="font-mono text-xs text-text-secondary leading-relaxed">{q.suggested_answer}</p>
+          <p className="font-mono text-xs text-text-secondary leading-relaxed">{q.follow_up}</p>
         </div>
       )}
     </div>
@@ -100,36 +93,37 @@ export function ReportSummary({ report }: Props) {
       </section>
 
       {/* ── PRIORITY FIXES ── */}
-      <section className="pb-6">
-        <div className="flex items-center gap-3 mb-1">
-          <span className="font-display text-2xl tracking-wider text-text-primary">
-            PRIORITY FIXES
-          </span>
-          <span className="font-mono text-xs text-accent-red border border-accent-red px-1.5 py-0.5">
-            {report.priority_fixes.length} ITEMS
-          </span>
-        </div>
-        <div className="border-b-2 border-bg-border mb-3" />
+      {report.score.priority_fixes.length > 0 && (
+        <section className="pb-6">
+          <div className="flex items-center gap-3 mb-1">
+            <span className="font-display text-2xl tracking-wider text-text-primary">
+              PRIORITY FIXES
+            </span>
+            <span className="font-mono text-xs text-accent-red border border-accent-red px-1.5 py-0.5">
+              {report.score.priority_fixes.length} ITEMS
+            </span>
+          </div>
+          <div className="border-b-2 border-bg-border mb-3" />
 
-        <ol className="space-y-2">
-          {report.priority_fixes.map((fix, i) => (
-            <li key={i} className="flex items-start gap-4 border-2 border-bg-border bg-bg-surface">
-              {/* Large numbered indicator */}
-              <div className="shrink-0 w-12 h-full bg-accent-red flex items-center justify-center py-3 self-stretch">
-                <span className="font-display text-2xl text-bg-base leading-none">
-                  {i + 1}
-                </span>
-              </div>
-              <p className="font-mono text-sm text-text-secondary leading-relaxed py-3 pr-4">
-                {fix}
-              </p>
-            </li>
-          ))}
-        </ol>
-      </section>
+          <ol className="space-y-2">
+            {report.score.priority_fixes.map((fix, i) => (
+              <li key={i} className="flex items-start gap-4 border-2 border-bg-border bg-bg-surface">
+                <div className="shrink-0 w-12 h-full bg-accent-red flex items-center justify-center py-3 self-stretch">
+                  <span className="font-display text-2xl text-bg-base leading-none">
+                    {i + 1}
+                  </span>
+                </div>
+                <p className="font-mono text-sm text-text-secondary leading-relaxed py-3 pr-4">
+                  {fix}
+                </p>
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
 
       {/* ── STAKEHOLDER QUESTIONS ── */}
-      {report.stakeholder_questions.length > 0 && (
+      {report.persona_questions.length > 0 && (
         <section className="pb-6">
           <div className="flex items-center gap-3 mb-1">
             <span className="font-display text-2xl tracking-wider text-text-primary">
@@ -139,7 +133,7 @@ export function ReportSummary({ report }: Props) {
           <div className="border-b-2 border-bg-border mb-3" />
 
           <div className="space-y-2">
-            {report.stakeholder_questions.map((q) => (
+            {report.persona_questions.map((q) => (
               <PersonaQuestionCard
                 key={q.id}
                 q={q}
@@ -150,25 +144,6 @@ export function ReportSummary({ report }: Props) {
           </div>
         </section>
       )}
-
-      {/* ── AGENTS RUN ── */}
-      <section>
-        <div className="flex items-center gap-3 mb-1">
-          <span className="font-display text-2xl tracking-wider text-text-primary">AGENTS RUN</span>
-        </div>
-        <div className="border-b-2 border-bg-border mb-3" />
-
-        <div className="flex gap-2 flex-wrap">
-          {report.agents_run.map((agent) => (
-            <span
-              key={agent}
-              className="px-3 py-1.5 bg-bg-elevated border-2 border-bg-border font-mono text-xs text-text-secondary uppercase tracking-wider"
-            >
-              {agent}
-            </span>
-          ))}
-        </div>
-      </section>
 
     </div>
   );

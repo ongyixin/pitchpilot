@@ -1,0 +1,288 @@
+{
+  "session_id": "live-remote-0001",
+  "session_mode": "live_remote",
+  "session_duration_seconds": 495.0,
+  "live_cues_count": 8,
+  "live_session_summary": "8:15 live remote session (Zoom screen share, 8 slides detected). 8 overlay cue cards delivered during the presentation. Two critical issues surfaced: the 'fully automated' compliance conflict and the unanchored 3× speed claim. Teleprompter was updated on each slide change. Three objection-prep cards were generated for anticipated investor and compliance questions. All findings include both live-triggered items and deferred items from the full post-session analysis.",
+  "video_filename": null,
+  "policy_filenames": ["enterprise_data_policy.pdf", "approved_messaging_guide.pdf"],
+  "personas": ["Skeptical Investor", "Technical Reviewer", "Compliance Officer"],
+  "status": "complete",
+  "progress": 100,
+  "progress_message": "Live session report complete",
+  "created_at": "2026-02-28T15:15:00Z",
+  "score": {
+    "overall": 70,
+    "dimensions": [
+      {
+        "dimension": "Clarity",
+        "score": 72,
+        "rationale": "Screen share was clear. Slide 3 jargon overload and the transition gap at slide 6→7 are the main clarity issues."
+      },
+      {
+        "dimension": "Compliance",
+        "score": 58,
+        "rationale": "Three compliance warnings detected from slides and transcript. The automation and privacy claims are the highest risk."
+      },
+      {
+        "dimension": "Defensibility",
+        "score": 70,
+        "rationale": "ChatGPT differentiation question is anticipated but not yet answered in the deck. Benchmark citations are missing."
+      },
+      {
+        "dimension": "Persuasiveness",
+        "score": 79,
+        "rationale": "Strong opening hook and model specificity. Close needs a crisper on-device differentiator statement."
+      }
+    ],
+    "priority_fixes": [
+      "Fix the 'fully automated' claim on slide 2 — it directly contradicts Enterprise Data Policy §3.2.",
+      "Anchor the '3× faster' metric to a named competitor and public benchmark.",
+      "Qualify the privacy claim on slide 4: add 'by default' to cover the opt-in cloud sync.",
+      "Add a bridge sentence between the demo slide (6) and the business-model slide (7).",
+      "Add a data-retention footnote to the architecture slide to pre-empt the compliance officer question."
+    ]
+  },
+  "findings": [
+    {
+      "id": "rf-001",
+      "agent": "coach",
+      "severity": "info",
+      "title": "Opening hook strong — preserve for all audiences",
+      "detail": "The opening 45 seconds established clear stakes and framed the problem memorably. Screen share was smooth from the start.",
+      "suggestion": null,
+      "timestamp": 15.0,
+      "claim_id": null,
+      "policy_reference": null,
+      "persona": null,
+      "live": true,
+      "cue_hint": null
+    },
+    {
+      "id": "rf-002",
+      "agent": "compliance",
+      "severity": "critical",
+      "title": "'Fully automated' conflicts with policy §3.2 (slide 2)",
+      "detail": "Slide 2 and transcript both claim 'fully automated — no manual review.' Policy §3.2 mandates human review above a 0.95 confidence threshold. This will derail a compliance-focused audience.",
+      "suggestion": "Rephrase to: 'Automated with optional human-in-the-loop review for high-stakes decisions.'",
+      "timestamp": 45.0,
+      "claim_id": "rc-001",
+      "policy_reference": "Enterprise Data Policy §3.2 — Human Oversight Requirement",
+      "persona": null,
+      "live": true,
+      "cue_hint": "compliance risk"
+    },
+    {
+      "id": "rf-003",
+      "agent": "coach",
+      "severity": "warning",
+      "title": "Slide 3 overloaded with technical jargon",
+      "detail": "Slide 3 uses 'multi-agent orchestration', 'LoRA fine-tuning', and 'tokenised function dispatch' in the same bullet list. Non-technical viewers on the call will disengage here.",
+      "suggestion": "Lead with the outcome ('analyzes your pitch in 90 seconds') before explaining the mechanism.",
+      "timestamp": 130.0,
+      "claim_id": null,
+      "policy_reference": null,
+      "persona": null,
+      "live": true,
+      "cue_hint": "simplify slide"
+    },
+    {
+      "id": "rf-004",
+      "agent": "compliance",
+      "severity": "warning",
+      "title": "'Nothing leaves your network' needs qualification (slide 4)",
+      "detail": "Privacy claim on slide 4 conflicts with the optional cloud-sync icon visible on the architecture slide. Viewers who notice this will lose trust.",
+      "suggestion": "Add 'by default' and note the opt-in cloud sync.",
+      "timestamp": 200.0,
+      "claim_id": "rc-003",
+      "policy_reference": "Privacy Disclosure Policy §1.1 — Accurate Representation",
+      "persona": null,
+      "live": true,
+      "cue_hint": "mention privacy"
+    },
+    {
+      "id": "rf-005",
+      "agent": "persona",
+      "severity": "info",
+      "title": "Technical Reviewer: model specificity is credible",
+      "detail": "The Technical Reviewer persona found the mention of Gemma 3n, FunctionGemma, and LoRA fine-tuning reassuring and technically credible.",
+      "suggestion": null,
+      "timestamp": 270.0,
+      "claim_id": null,
+      "policy_reference": null,
+      "persona": "Technical Reviewer",
+      "live": true,
+      "cue_hint": null
+    },
+    {
+      "id": "rf-006",
+      "agent": "coach",
+      "severity": "critical",
+      "title": "Speed metric lacks benchmark context (slide 6)",
+      "detail": "'3× faster' is compelling but the baseline is unstated. Technical reviewers on the call will immediately ask '3× vs. what?'",
+      "suggestion": "Name the competitor and link to a reproducible benchmark.",
+      "timestamp": 255.0,
+      "claim_id": "rc-004",
+      "policy_reference": null,
+      "persona": null,
+      "live": true,
+      "cue_hint": "name benchmark"
+    },
+    {
+      "id": "rf-007",
+      "agent": "persona",
+      "severity": "warning",
+      "title": "Skeptical Investor: ChatGPT differentiation question incoming",
+      "detail": "The presentation has not yet explained why on-device matters vs. a compliance-aware GPT-4o wrapper. Expect this question from investors on the call.",
+      "suggestion": "Prepare: 'ChatGPT requires sending your pitch to the cloud and has no sales-specific fine-tuning.'",
+      "timestamp": 300.0,
+      "claim_id": null,
+      "policy_reference": null,
+      "persona": "Skeptical Investor",
+      "live": true,
+      "cue_hint": "ChatGPT pushback likely"
+    },
+    {
+      "id": "rf-008",
+      "agent": "coach",
+      "severity": "warning",
+      "title": "Abrupt transition slide 6 → 7",
+      "detail": "The jump from the live demo to the business model slide felt unanchored. No bridging sentence to orient the remote audience.",
+      "suggestion": "Add: 'What you just saw is the core product. Here's how we monetize it.'",
+      "timestamp": 370.0,
+      "claim_id": null,
+      "policy_reference": null,
+      "persona": null,
+      "live": true,
+      "cue_hint": "add bridge"
+    },
+    {
+      "id": "rf-009",
+      "agent": "compliance",
+      "severity": "warning",
+      "title": "99.9 % uptime SLA not reflected in standard contract (slide 4)",
+      "detail": "Standard tier is 99.5 %. Promising 99.9 % on-screen without qualification creates potential contractual liability visible to all call participants.",
+      "suggestion": "Add 'premium tier only' or 'up to 99.9 %' footnote on slide 4.",
+      "timestamp": 405.0,
+      "claim_id": "rc-002",
+      "policy_reference": "SLA Addendum v2 — Enterprise Standard Tier",
+      "persona": null,
+      "live": true,
+      "cue_hint": "add footnote"
+    },
+    {
+      "id": "rf-010",
+      "agent": "persona",
+      "severity": "warning",
+      "title": "Compliance Officer: data retention policy missing",
+      "detail": "Eight minutes in and no mention of rehearsal recording retention. A compliance officer on the call will note the absence and ask offline.",
+      "suggestion": "Add one sentence on local-only storage and auto-deletion policy.",
+      "timestamp": 440.0,
+      "claim_id": null,
+      "policy_reference": null,
+      "persona": "Compliance Officer",
+      "live": true,
+      "cue_hint": "mention retention"
+    },
+    {
+      "id": "rf-011",
+      "agent": "compliance",
+      "severity": "info",
+      "title": "Deployment time claim should cite conditions",
+      "detail": "'Under one hour' is plausible for single-user SaaS deployment but on-device enterprise rollout typically requires IT approval cycles.",
+      "suggestion": "Add 'for standard single-user deployment' to the one-hour claim.",
+      "timestamp": 330.0,
+      "claim_id": "rc-005",
+      "policy_reference": null,
+      "persona": null,
+      "live": true,
+      "cue_hint": null
+    }
+  ],
+  "persona_questions": [
+    {
+      "id": "rq-001",
+      "persona": "Skeptical Investor",
+      "question": "How is this different from a compliance-aware wrapper around GPT-4o?",
+      "follow_up": "And what's the switching cost once an enterprise is already on a cloud AI platform?",
+      "timestamp": 300.0,
+      "difficulty": "critical"
+    },
+    {
+      "id": "rq-002",
+      "persona": "Skeptical Investor",
+      "question": "What does '3× faster' mean — 3× vs. which competitor, on which benchmark?",
+      "timestamp": 255.0,
+      "difficulty": "warning"
+    },
+    {
+      "id": "rq-003",
+      "persona": "Compliance Officer",
+      "question": "The slide says 'nothing leaves the device' but there's a cloud-sync icon on the architecture slide — which is accurate?",
+      "timestamp": 200.0,
+      "difficulty": "critical"
+    },
+    {
+      "id": "rq-004",
+      "persona": "Compliance Officer",
+      "question": "How long are session recordings retained, and is there an auditable deletion log?",
+      "timestamp": 440.0,
+      "difficulty": "warning"
+    },
+    {
+      "id": "rq-005",
+      "persona": "Technical Reviewer",
+      "question": "What is the end-to-end latency from a screen-share slide change to the presenter receiving an overlay cue?",
+      "timestamp": 130.0,
+      "difficulty": "warning"
+    }
+  ],
+  "claims": [
+    {
+      "id": "rc-001",
+      "text": "Our platform is fully automated — no manual review required.",
+      "claim_type": "feature",
+      "timestamp": 45.0,
+      "source": "both",
+      "slide_number": 2,
+      "confidence": 0.93
+    },
+    {
+      "id": "rc-002",
+      "text": "We achieve 99.9 % uptime across all enterprise tiers.",
+      "claim_type": "metric",
+      "timestamp": 130.0,
+      "source": "slide",
+      "slide_number": 4,
+      "confidence": 0.89
+    },
+    {
+      "id": "rc-003",
+      "text": "All customer data is stored exclusively on-device — nothing leaves your network.",
+      "claim_type": "privacy",
+      "timestamp": 200.0,
+      "source": "both",
+      "slide_number": 4,
+      "confidence": 0.91
+    },
+    {
+      "id": "rc-004",
+      "text": "We outperform every competitor by 3× on inference speed.",
+      "claim_type": "comparison",
+      "timestamp": 255.0,
+      "source": "transcript",
+      "slide_number": 6,
+      "confidence": 0.81
+    },
+    {
+      "id": "rc-005",
+      "text": "Deployment takes under one hour for any enterprise environment.",
+      "claim_type": "feature",
+      "timestamp": 330.0,
+      "source": "slide",
+      "slide_number": 7,
+      "confidence": 0.76
+    }
+  ],
+  "summary": "Overall readiness is 70/100. Strong opening and credible technical specificity, but two critical compliance conflicts and several qualifier-level issues need resolution. The privacy and automation claims on slides 2 and 4 are the highest-risk items for a compliance-focused remote audience. Prepare crisp answers to the ChatGPT differentiation question and the data-retention question before the next remote session."
+}

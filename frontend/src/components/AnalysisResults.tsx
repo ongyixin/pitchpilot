@@ -24,7 +24,7 @@ import { FindingsPanel } from './FindingsPanel';
 import { ReadinessScore } from './ReadinessScore';
 import type { ReadinessReport as ApiReport, Finding as ApiFinding } from '@/types/api';
 import { cn, formatTime } from '@/lib/utils';
-import { AlertCircle, AlertTriangle, Info, ChevronRight, Clock, User } from 'lucide-react';
+import { ChevronRight, Clock, User } from 'lucide-react';
 
 interface Props {
   report: ReadinessReport;
@@ -284,7 +284,7 @@ function PersonaQuestions({
 
 function VideoPlaceholder({
   filename,
-  onSeek,
+  onSeek: _onSeek,
   currentTime,
 }: {
   filename?: string;

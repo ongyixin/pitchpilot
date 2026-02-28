@@ -1,0 +1,246 @@
+{
+  "session_id": "live-inroom-0001",
+  "session_mode": "live_in_room",
+  "session_duration_seconds": 322.0,
+  "live_cues_count": 6,
+  "live_session_summary": "5:22 live in-room session. 6 earpiece cues delivered in real time. Two critical issues surfaced: the 'fully automated' compliance conflict and the unanchored 3× speed claim. The on-device differentiator was underemphasised — repeat it earlier and at close. All findings below include both the issues that triggered live cues and the deferred items that surface here for the first time.",
+  "video_filename": null,
+  "policy_filenames": ["enterprise_data_policy.pdf", "approved_messaging_guide.pdf"],
+  "personas": ["Skeptical Investor", "Technical Reviewer", "Compliance Officer"],
+  "status": "complete",
+  "progress": 100,
+  "progress_message": "Live session report complete",
+  "created_at": "2026-02-28T14:30:00Z",
+  "score": {
+    "overall": 74,
+    "dimensions": [
+      {
+        "dimension": "Clarity",
+        "score": 76,
+        "rationale": "Structure and flow were solid live. One abrupt transition and jargon overload on the solution slide are addressable."
+      },
+      {
+        "dimension": "Compliance",
+        "score": 63,
+        "rationale": "Two critical policy conflicts detected live. The 'fully automated' and privacy claims need rewording before the next session."
+      },
+      {
+        "dimension": "Defensibility",
+        "score": 69,
+        "rationale": "Speed and uptime claims need benchmark citations. Persona simulation flagged ROI and ChatGPT differentiation gaps."
+      },
+      {
+        "dimension": "Persuasiveness",
+        "score": 80,
+        "rationale": "Opening hook and on-device framing are strong trust signals. The close needs a crisper differentiation statement."
+      }
+    ],
+    "priority_fixes": [
+      "Fix the 'fully automated' claim — it directly contradicts Enterprise Data Policy §3.2.",
+      "Anchor the '3× faster' metric to a named competitor and public benchmark.",
+      "Qualify the privacy claim: add 'by default' to cover the opt-in cloud sync.",
+      "Add a bridge sentence between the demo and the business-model slide."
+    ]
+  },
+  "findings": [
+    {
+      "id": "lf-001",
+      "agent": "coach",
+      "severity": "info",
+      "title": "Strong opening hook captured live",
+      "detail": "The opening anecdote about a failed product demo was vivid and relatable. It established stakes immediately and held the room's attention.",
+      "suggestion": null,
+      "timestamp": 12.0,
+      "claim_id": null,
+      "policy_reference": null,
+      "persona": null,
+      "live": true,
+      "cue_hint": null
+    },
+    {
+      "id": "lf-002",
+      "agent": "compliance",
+      "severity": "critical",
+      "title": "'Fully automated' conflicts with policy §3.2",
+      "detail": "Your enterprise data-handling policy (section 3.2) requires human review for model outputs above a confidence threshold of 0.95. Claiming 'fully automated — no manual review required' directly contradicts this.",
+      "suggestion": "Rephrase to: 'Automated with optional human-in-the-loop review for high-stakes decisions.'",
+      "timestamp": 34.0,
+      "claim_id": "lc-001",
+      "policy_reference": "Enterprise Data Policy §3.2 — Human Oversight Requirement",
+      "persona": null,
+      "live": true,
+      "cue_hint": "compliance risk"
+    },
+    {
+      "id": "lf-003",
+      "agent": "coach",
+      "severity": "warning",
+      "title": "Pacing fast through uptime metric",
+      "detail": "The 99.9 % uptime claim was delivered quickly without a pause. Sophisticated audiences need a moment to register numeric claims.",
+      "suggestion": "Add a 1–2 second pause after stating uptime figures to let them land.",
+      "timestamp": 70.0,
+      "claim_id": "lc-002",
+      "policy_reference": null,
+      "persona": null,
+      "live": true,
+      "cue_hint": "slow down"
+    },
+    {
+      "id": "lf-004",
+      "agent": "compliance",
+      "severity": "warning",
+      "title": "'Nothing leaves your network' needs qualification",
+      "detail": "The blanket on-device privacy claim may be technically false for customers who enable the optional cloud-sync feature shown on your architecture slide.",
+      "suggestion": "Add 'by default' and mention the opt-in cloud sync explicitly.",
+      "timestamp": 112.0,
+      "claim_id": "lc-003",
+      "policy_reference": "Privacy Disclosure Policy §1.1 — Accurate Representation",
+      "persona": null,
+      "live": true,
+      "cue_hint": "mention privacy"
+    },
+    {
+      "id": "lf-005",
+      "agent": "coach",
+      "severity": "critical",
+      "title": "Speed metric lacks benchmark context",
+      "detail": "'3× faster' is compelling but the baseline is never stated. Sophisticated audiences dismiss unanchored comparisons immediately.",
+      "suggestion": "Name the competitor and link to a reproducible benchmark.",
+      "timestamp": 155.0,
+      "claim_id": "lc-004",
+      "policy_reference": null,
+      "persona": null,
+      "live": true,
+      "cue_hint": "name the benchmark"
+    },
+    {
+      "id": "lf-006",
+      "agent": "persona",
+      "severity": "warning",
+      "title": "Skeptical Investor: ROI question anticipated",
+      "detail": "Based on the claims heard so far, a skeptical investor will ask about ROI and differentiation from ChatGPT. The on-device angle has not been emphasised strongly enough yet.",
+      "suggestion": "Lead with the on-device / privacy differentiator and repeat it at close.",
+      "timestamp": 198.0,
+      "claim_id": null,
+      "policy_reference": null,
+      "persona": "Skeptical Investor",
+      "live": true,
+      "cue_hint": "ROI question likely"
+    },
+    {
+      "id": "lf-007",
+      "agent": "compliance",
+      "severity": "info",
+      "title": "99.9 % uptime SLA needs footnote",
+      "detail": "The standard enterprise contract offers 99.5 % SLA. The 99.9 % claim is technically achievable under the premium tier but should be qualified to avoid contractual ambiguity.",
+      "suggestion": "Say 'up to 99.9 % on the premium tier' and add a footnote.",
+      "timestamp": 72.0,
+      "claim_id": "lc-002",
+      "policy_reference": "SLA Addendum v2 — Enterprise Standard Tier",
+      "persona": null,
+      "live": true,
+      "cue_hint": null
+    },
+    {
+      "id": "lf-008",
+      "agent": "coach",
+      "severity": "warning",
+      "title": "Differentiation from ChatGPT still unclear at close",
+      "detail": "Four minutes in and the on-device differentiation has still not been stated crisply. Closing without this leaves the key question unanswered.",
+      "suggestion": "Closing line: 'Unlike cloud-based AI, everything runs on your device. No data leaves the room.'",
+      "timestamp": 285.0,
+      "claim_id": null,
+      "policy_reference": null,
+      "persona": null,
+      "live": true,
+      "cue_hint": "clarify differentiation"
+    },
+    {
+      "id": "lf-009",
+      "agent": "persona",
+      "severity": "warning",
+      "title": "Compliance Officer: data retention policy not mentioned",
+      "detail": "No mention of how long rehearsal recordings are retained locally. A compliance officer in the room would flag this immediately.",
+      "suggestion": "Add one sentence on local-only storage and auto-deletion policy.",
+      "timestamp": 240.0,
+      "claim_id": null,
+      "policy_reference": null,
+      "persona": "Compliance Officer",
+      "live": true,
+      "cue_hint": null
+    }
+  ],
+  "persona_questions": [
+    {
+      "id": "lq-001",
+      "persona": "Skeptical Investor",
+      "question": "How is this meaningfully different from asking ChatGPT to review my pitch?",
+      "follow_up": "And if the answer is 'on-device', why can't a compliance-aware wrapper around GPT-4o do the same?",
+      "timestamp": 198.0,
+      "difficulty": "critical"
+    },
+    {
+      "id": "lq-002",
+      "persona": "Skeptical Investor",
+      "question": "What does '3× faster' mean exactly, and is there a published benchmark?",
+      "timestamp": 155.0,
+      "difficulty": "warning"
+    },
+    {
+      "id": "lq-003",
+      "persona": "Compliance Officer",
+      "question": "You said 'no data leaves the device' — does that apply even when the optional cloud sync is enabled?",
+      "timestamp": 112.0,
+      "difficulty": "critical"
+    },
+    {
+      "id": "lq-004",
+      "persona": "Compliance Officer",
+      "question": "How long are live session recordings retained on the device, and is there an auto-delete policy?",
+      "timestamp": 240.0,
+      "difficulty": "warning"
+    },
+    {
+      "id": "lq-005",
+      "persona": "Technical Reviewer",
+      "question": "What is the end-to-end latency from speaking a claim to receiving the earpiece cue?",
+      "timestamp": 70.0,
+      "difficulty": "warning"
+    }
+  ],
+  "claims": [
+    {
+      "id": "lc-001",
+      "text": "Our platform is fully automated — no manual review required.",
+      "claim_type": "feature",
+      "timestamp": 34.0,
+      "source": "transcript",
+      "confidence": 0.92
+    },
+    {
+      "id": "lc-002",
+      "text": "We achieve 99.9 % uptime across all enterprise tiers.",
+      "claim_type": "metric",
+      "timestamp": 70.0,
+      "source": "transcript",
+      "confidence": 0.87
+    },
+    {
+      "id": "lc-003",
+      "text": "All customer data is stored exclusively on-device — nothing leaves your network.",
+      "claim_type": "privacy",
+      "timestamp": 112.0,
+      "source": "transcript",
+      "confidence": 0.90
+    },
+    {
+      "id": "lc-004",
+      "text": "We outperform every competitor by 3× on inference speed.",
+      "claim_type": "comparison",
+      "timestamp": 155.0,
+      "source": "transcript",
+      "confidence": 0.79
+    }
+  ],
+  "summary": "Overall readiness is 74/100. The pitch has a strong hook and credible technical specificity, but two compliance conflicts need resolution before the next session. The privacy and automation claims are the highest-risk items. Prepare for the ChatGPT differentiation question — it will come from every audience."
+}

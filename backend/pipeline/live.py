@@ -8,30 +8,36 @@ near-real-time.
 
 Flow per cycle:
   1. ingest_audio_chunk()  → incremental transcription → appended to buffer
-  2. ingest_frame()        → single-frame OCR → appended to buffer
+  2. ingest_frame()        → single-frame OCR → appended to buffer, slide-change tracked
   3. extract_and_route()   → sliding-window claim extraction → Orchestrator.run_claim()
                            → new findings returned to caller
 
+Live-mode extensions:
+  4. generate_teleprompter_points()  → Gemma 3 call → 2-3 talking points for current slide
+  5. generate_objection_prep()       → Gemma 3 call → likely questions + suggested answers
+  6. generate_script_suggestion()    → compress a compliance/coach finding into reword suggestion
+
 After the presenter ends the session:
-  4. finalize()            → full Orchestrator.run() pass on accumulated context
+  7. finalize()            → full Orchestrator.run() pass on accumulated context
                            → ReadinessReport generated (same schema as upload mode)
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import io
 import os
 import tempfile
 import time
 import uuid
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from loguru import logger
 
 from backend.agents.orchestrator import Orchestrator, OrchestratorResult
-from backend.config import SESSIONS_DIR, settings
+from backend.config import SESSIONS_DIR, PROMPTS_DIR, settings
 from backend.data_models import (
     AudioTrack,
     OCRBlock,
@@ -49,6 +55,59 @@ from backend.schemas import (
     TranscriptSegment as SchemaTranscriptSegment,
     SlideOCR,
 )
+
+# ---------------------------------------------------------------------------
+# Remote-mode mock responses
+# ---------------------------------------------------------------------------
+
+_MOCK_TELEPROMPTER_POINTS = [
+    [
+        "Highlight how on-device inference eliminates round-trip latency.",
+        "Emphasise that no data leaves the device — critical for enterprise buyers.",
+        "Bridge to the live demo: 'Let me show you what this looks like in practice.'",
+    ],
+    [
+        "Walk through the three-model stack and why each model earns its place.",
+        "Point out the FunctionGemma routing step — this is the fine-tuning payoff.",
+        "Mention the 5-8 second end-to-end latency budget and why cloud can't match it.",
+    ],
+    [
+        "Summarise the readiness score and what each dimension means for the audience.",
+        "Pick the highest-severity finding and show the suggested fix in real time.",
+        "Close with the meta-demo moment: 'PitchPilot just reviewed our own pitch.'",
+    ],
+]
+
+_MOCK_OBJECTIONS = [
+    [
+        {
+            "question": "How is this different from asking ChatGPT to review my deck?",
+            "suggested_answer": "ChatGPT is cloud-only and adds 1-3 s network latency — too slow for live earpiece cues. PitchPilot runs entirely on-device so cues arrive while the topic is still live.",
+            "persona": "Skeptical Investor",
+            "difficulty": "hard",
+        },
+        {
+            "question": "What's your latency from utterance to earpiece cue?",
+            "suggested_answer": "5-8 seconds end-to-end. Transcription takes 1-2 s, claim extraction 0.5 s, FunctionGemma routing 0.1 s, agent reasoning 1-2 s, TTS 0.3 s.",
+            "persona": "Technical Reviewer",
+            "difficulty": "medium",
+        },
+    ],
+    [
+        {
+            "question": "Has your automated pipeline been reviewed for GDPR Article 22?",
+            "suggested_answer": "The pipeline is local-only — no personal data leaves the device. Article 22 applies to automated decisions with legal effect; our tool produces coaching cues, not binding decisions.",
+            "persona": "Compliance Officer",
+            "difficulty": "hard",
+        },
+        {
+            "question": "What happens when Gemma 3n hallucinates during OCR?",
+            "suggested_answer": "We run perceptual-hash deduplication so near-identical frames reuse cached OCR. Confidence thresholds gate which OCR blocks feed into claim extraction.",
+            "persona": "Technical Reviewer",
+            "difficulty": "medium",
+        },
+    ],
+]
 
 
 # ---------------------------------------------------------------------------
@@ -140,12 +199,14 @@ class LivePipeline:
         personas: Optional[list[str]] = None,
         policy_text: str = "",
         presentation_title: str = "",
+        mode: str = "rehearsal",
     ) -> None:
         self.session_id = session_id
         self._orchestrator = orchestrator or Orchestrator()
         self.personas: list[str] = personas or []
         self.policy_text = policy_text
         self.presentation_title = presentation_title
+        self.mode = mode  # "rehearsal" | "in_room" | "remote"
 
         # Accumulated buffers
         self._transcript_segments: list[TranscriptSegment] = []
@@ -160,12 +221,19 @@ class LivePipeline:
         self._session_start: float = time.monotonic()
         self._mock_chunk_index: int = 0
         self._mock_finding_index: int = 0
+        self._mock_teleprompter_index: int = 0
+        self._mock_objection_index: int = 0
+
+        # Slide-change tracking for remote mode
+        self._last_slide_text: str = ""
+        self._slide_changed: bool = False
 
         # Sub-pipelines (initialised lazily)
         self._transcriber: Optional[TranscriptionPipeline] = None
         self._ocr: Optional[OCRPipeline] = None
         self._claim_extractor: Optional[ClaimExtractor] = None
         self._report_gen: Optional[ReadinessReportGenerator] = None
+        self._gemma3: Optional[Any] = None  # Gemma3Adapter, lazy-loaded
 
         # Session directory for temp audio chunks
         self._session_dir = SESSIONS_DIR / session_id
@@ -186,9 +254,19 @@ class LivePipeline:
             self._transcriber = TranscriptionPipeline()
             self._ocr = OCRPipeline()
             self._claim_extractor = ClaimExtractor()
+            # Lazy-load Gemma3 for teleprompter/objection_prep (remote mode only)
+            if self.mode == "remote":
+                try:
+                    from backend.models.gemma3 import Gemma3Adapter  # noqa: PLC0415
+                    self._gemma3 = Gemma3Adapter()
+                except Exception as exc:
+                    logger.warning(f"[live] Could not load Gemma3Adapter: {exc}")
         self._report_gen = ReadinessReportGenerator()
         self._initialized = True
-        logger.info(f"[live] Pipeline initialized | session={self.session_id} | mock={settings.mock_mode}")
+        logger.info(
+            f"[live] Pipeline initialized | session={self.session_id} "
+            f"| mock={settings.mock_mode} | mode={self.mode}"
+        )
 
     # ------------------------------------------------------------------
     # Per-chunk ingestion
@@ -296,6 +374,14 @@ class LivePipeline:
 
         self._ocr_blocks.extend(blocks)
         logger.debug(f"[live] OCR'd frame at {timestamp:.1f}s: {len(blocks)} blocks")
+
+        # Track slide changes for remote-mode teleprompter triggers
+        if blocks:
+            combined_text = " ".join(b.text for b in blocks if b.text)
+            if combined_text and combined_text != self._last_slide_text:
+                self._slide_changed = True
+                self._last_slide_text = combined_text
+
         return blocks
 
     # ------------------------------------------------------------------
@@ -407,6 +493,148 @@ class LivePipeline:
         result.timeline = _rebuild_timeline(result.findings)
 
         return result
+
+    # ------------------------------------------------------------------
+    # Remote-mode: teleprompter, objection prep, script suggestion
+    # ------------------------------------------------------------------
+
+    def consume_slide_changed(self) -> bool:
+        """Return True if the slide changed since the last call; resets the flag."""
+        changed = self._slide_changed
+        self._slide_changed = False
+        return changed
+
+    def current_slide_text(self) -> str:
+        """Return the most recently OCR'd slide text."""
+        return self._last_slide_text
+
+    def recent_transcript_tail(self, seconds: float = 30.0) -> str:
+        """Return the transcript text from the last `seconds` of the session."""
+        now_offset = self.elapsed_seconds
+        cutoff = now_offset - seconds
+        tail = [
+            seg.text for seg in self._transcript_segments
+            if seg.start_time >= cutoff
+        ]
+        return " ".join(tail)
+
+    async def generate_teleprompter_points(self) -> list[str]:
+        """
+        Generate 2-3 talking points for the current slide using Gemma 3.
+
+        Returns an empty list if there is not enough context yet.
+        """
+        if not self._initialized:
+            await self.initialize()
+
+        if settings.mock_mode:
+            idx = self._mock_teleprompter_index % len(_MOCK_TELEPROMPTER_POINTS)
+            self._mock_teleprompter_index += 1
+            return _MOCK_TELEPROMPTER_POINTS[idx]
+
+        slide_context = self.current_slide_text()
+        recent_transcript = self.recent_transcript_tail(30.0)
+
+        if not slide_context and not recent_transcript:
+            return []
+
+        if self._gemma3 is None:
+            logger.warning("[live] Gemma3 not available for teleprompter generation")
+            return []
+
+        try:
+            system_prompt = (PROMPTS_DIR / "teleprompter.txt").read_text()
+            user_prompt = (
+                f"slide_context: {slide_context or '(no slide visible)'}\n\n"
+                f"recent_transcript: {recent_transcript or '(presenter has not spoken yet)'}"
+            )
+            raw = await self._gemma3.generate(
+                prompt=user_prompt,
+                system=system_prompt,
+                temperature=0.4,
+                max_tokens=400,
+                response_format="json",
+            )
+            data = json.loads(raw)
+            points = data.get("points", [])
+            if isinstance(points, list):
+                return [str(p) for p in points[:3]]
+        except Exception as exc:
+            logger.warning(f"[live] Teleprompter generation failed: {exc}")
+
+        return []
+
+    async def generate_objection_prep(self) -> list[dict]:
+        """
+        Generate 2-3 likely audience questions with suggested answers.
+
+        Returns a list of dicts with keys: question, suggested_answer, persona, difficulty.
+        """
+        if not self._initialized:
+            await self.initialize()
+
+        if settings.mock_mode:
+            idx = self._mock_objection_index % len(_MOCK_OBJECTIONS)
+            self._mock_objection_index += 1
+            return _MOCK_OBJECTIONS[idx]
+
+        if not self._all_claims:
+            return []
+
+        if self._gemma3 is None:
+            logger.warning("[live] Gemma3 not available for objection_prep generation")
+            return []
+
+        try:
+            system_prompt = (PROMPTS_DIR / "objection_prep.txt").read_text()
+            recent_claims = self._all_claims[-8:]  # last 8 claims
+            claims_text = "\n".join(f"- {c.text}" for c in recent_claims)
+            personas_text = ", ".join(self.personas) if self.personas else "General audience"
+            slide_context = self.current_slide_text()
+            user_prompt = (
+                f"personas: {personas_text}\n\n"
+                f"recent_claims:\n{claims_text}\n\n"
+                f"slide_context: {slide_context or '(unavailable)'}"
+            )
+            raw = await self._gemma3.generate(
+                prompt=user_prompt,
+                system=system_prompt,
+                temperature=0.5,
+                max_tokens=600,
+                response_format="json",
+            )
+            data = json.loads(raw)
+            questions = data.get("questions", [])
+            if isinstance(questions, list):
+                return [
+                    {
+                        "question": str(q.get("question", "")),
+                        "suggested_answer": str(q.get("suggested_answer", "")),
+                        "persona": str(q.get("persona", "")),
+                        "difficulty": str(q.get("difficulty", "medium")),
+                    }
+                    for q in questions[:3]
+                    if q.get("question")
+                ]
+        except Exception as exc:
+            logger.warning(f"[live] Objection prep generation failed: {exc}")
+
+        return []
+
+    async def generate_script_suggestion(self, title: str, suggestion: str, reason: str) -> dict | None:
+        """
+        Build a script_suggestion payload from a compliance or coach finding.
+
+        In non-mock mode this is a passthrough — the finding already has the fields.
+        Returns None if there is not enough information.
+        """
+        if not title or not suggestion:
+            return None
+        return {
+            "original": title,
+            "alternative": suggestion,
+            "reason": reason[:150] if reason else "",
+        }
 
     # ------------------------------------------------------------------
     # Context builder

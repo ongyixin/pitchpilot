@@ -1,22 +1,21 @@
 import { useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
-import type { StatusResponse } from '@/types/api';
+import type { SessionStatusResponse } from '@/types';
 
 const PIPELINE_STEPS = [
-  { key: 'extracting_frames', label: 'Frame Extraction', sub: 'Gemma 3n · OpenCV' },
-  { key: 'transcribing', label: 'Audio Transcription', sub: 'Gemma 3n · Audio' },
-  { key: 'extracting_claims', label: 'Claim Extraction', sub: 'Gemma 3n · OCR + NLP' },
-  { key: 'running_agents', label: 'Agent Analysis', sub: 'FunctionGemma · Gemma 3 4B' },
-  { key: 'scoring', label: 'Readiness Scoring', sub: 'Aggregating findings' },
-  { key: 'complete', label: 'Complete', sub: '' },
+  { threshold: 15,  label: 'Frame Extraction',   sub: 'Gemma 3n · OpenCV' },
+  { threshold: 35,  label: 'Audio Transcription', sub: 'Gemma 3n · Audio' },
+  { threshold: 55,  label: 'Claim Extraction',    sub: 'Gemma 3n · OCR + NLP' },
+  { threshold: 85,  label: 'Agent Analysis',      sub: 'FunctionGemma · Gemma 3 4B' },
+  { threshold: 100, label: 'Readiness Scoring',   sub: 'Aggregating findings' },
 ];
 
-function getStepIndex(status: string): number {
-  return PIPELINE_STEPS.findIndex((s) => s.key === status);
+function getStepIndex(progress: number): number {
+  return PIPELINE_STEPS.findIndex((s) => progress < s.threshold);
 }
 
 interface Props {
-  status: StatusResponse | null;
+  status: SessionStatusResponse | null;
   sessionId: string | null;
 }
 
@@ -29,8 +28,8 @@ export function AnalyzingPage({ status, sessionId }: Props) {
   }, []);
 
   const progress = status?.progress ?? 0;
-  const currentStepIndex = getStepIndex(status?.status ?? '');
-  const currentLabel = status?.current_step ?? 'Initializing';
+  const currentStepIndex = getStepIndex(progress);
+  const currentLabel = status?.progress_message ?? 'Initializing…';
 
   return (
     <div className="min-h-screen bg-bg-base flex flex-col">
@@ -39,7 +38,7 @@ export function AnalyzingPage({ status, sessionId }: Props) {
         <div className="max-w-lg mx-auto">
           <div className="flex items-end justify-between gap-4">
             <h1 className="font-display text-8xl leading-none text-text-primary tracking-wider">
-              PITCHPILOT
+              P<span className="italic">ITCH</span><span className="ml-4">PILOT</span>
             </h1>
             {sessionId && (
               <div className="text-right pb-2 shrink-0">

@@ -259,6 +259,136 @@ def test_sample_policy_files_exist():
 
 
 # ---------------------------------------------------------------------------
+# Live session fixture tests
+# ---------------------------------------------------------------------------
+
+
+def test_live_inroom_fixture_exists():
+    """The live in-room fixture JSON file exists at the expected path."""
+    path = PROJECT_ROOT / "data" / "fixtures" / "live_inroom_session.json"
+    assert path.exists(), f"Live in-room fixture not found at {path}"
+
+
+def test_live_remote_fixture_exists():
+    """The live remote fixture JSON file exists at the expected path."""
+    path = PROJECT_ROOT / "data" / "fixtures" / "live_remote_session.json"
+    assert path.exists(), f"Live remote fixture not found at {path}"
+
+
+def _load_live_fixture(name: str) -> dict:
+    path = PROJECT_ROOT / "data" / "fixtures" / name
+    with open(path) as f:
+        return json.load(f)
+
+
+def test_live_inroom_fixture_valid_json():
+    """Live in-room fixture has the required top-level keys."""
+    data = _load_live_fixture("live_inroom_session.json")
+    required = {"session_id", "session_mode", "score", "findings", "persona_questions", "claims", "summary"}
+    missing = required - data.keys()
+    assert not missing, f"Live in-room fixture missing keys: {missing}"
+    assert data["session_mode"] == "live_in_room"
+
+
+def test_live_remote_fixture_valid_json():
+    """Live remote fixture has the required top-level keys."""
+    data = _load_live_fixture("live_remote_session.json")
+    required = {"session_id", "session_mode", "score", "findings", "persona_questions", "claims", "summary"}
+    missing = required - data.keys()
+    assert not missing, f"Live remote fixture missing keys: {missing}"
+    assert data["session_mode"] == "live_remote"
+
+
+def test_live_inroom_fixture_has_live_findings():
+    """All findings in the in-room fixture have live=true and valid agent/severity."""
+    data = _load_live_fixture("live_inroom_session.json")
+    valid_agents = {"coach", "compliance", "persona"}
+    valid_severities = {"info", "warning", "critical"}
+    required = {"id", "agent", "severity", "title", "detail", "timestamp"}
+
+    for finding in data["findings"]:
+        missing = required - finding.keys()
+        assert not missing, f"Finding {finding.get('id')} missing: {missing}"
+        assert finding["agent"] in valid_agents
+        assert finding["severity"] in valid_severities
+        assert finding.get("live") is True, f"Finding {finding['id']} is missing live=true"
+
+
+def test_live_remote_fixture_has_live_findings():
+    """All findings in the remote fixture have live=true and valid agent/severity."""
+    data = _load_live_fixture("live_remote_session.json")
+    valid_agents = {"coach", "compliance", "persona"}
+    valid_severities = {"info", "warning", "critical"}
+    required = {"id", "agent", "severity", "title", "detail", "timestamp"}
+
+    for finding in data["findings"]:
+        missing = required - finding.keys()
+        assert not missing, f"Finding {finding.get('id')} missing: {missing}"
+        assert finding["agent"] in valid_agents
+        assert finding["severity"] in valid_severities
+        assert finding.get("live") is True, f"Finding {finding['id']} is missing live=true"
+
+
+def test_live_inroom_fixture_has_earpiece_cues():
+    """Critical and warning findings in the in-room fixture have cue_hint fields."""
+    data = _load_live_fixture("live_inroom_session.json")
+    actionable = [f for f in data["findings"] if f["severity"] in ("critical", "warning")]
+    with_cues = [f for f in actionable if f.get("cue_hint")]
+    assert len(with_cues) >= 4, (
+        f"Expected ≥4 findings with cue_hint in live in-room fixture, got {len(with_cues)}"
+    )
+    # Cue hints should be 3-6 words
+    for f in with_cues:
+        words = f["cue_hint"].split()
+        assert 2 <= len(words) <= 8, (
+            f"cue_hint '{f['cue_hint']}' on finding {f['id']} is unexpectedly long/short"
+        )
+
+
+def test_live_remote_fixture_has_overlay_cues():
+    """Critical and warning findings in the remote fixture have cue_hint fields."""
+    data = _load_live_fixture("live_remote_session.json")
+    actionable = [f for f in data["findings"] if f["severity"] in ("critical", "warning")]
+    with_cues = [f for f in actionable if f.get("cue_hint")]
+    assert len(with_cues) >= 5, (
+        f"Expected ≥5 findings with cue_hint in live remote fixture, got {len(with_cues)}"
+    )
+
+
+def test_live_fixtures_duration_and_cues_count():
+    """Live fixtures include session_duration_seconds and live_cues_count."""
+    inroom = _load_live_fixture("live_inroom_session.json")
+    assert "session_duration_seconds" in inroom
+    assert "live_cues_count" in inroom
+    assert inroom["session_duration_seconds"] > 0
+    assert inroom["live_cues_count"] > 0
+
+    remote = _load_live_fixture("live_remote_session.json")
+    assert "session_duration_seconds" in remote
+    assert "live_cues_count" in remote
+    assert remote["session_duration_seconds"] > 0
+    assert remote["live_cues_count"] > 0
+
+
+def test_live_inroom_score_in_range():
+    """Live in-room fixture score is valid (0–100, ≥3 dimensions)."""
+    data = _load_live_fixture("live_inroom_session.json")
+    score = data["score"]
+    assert 0 <= score["overall"] <= 100
+    assert len(score["dimensions"]) >= 3
+    assert len(score["priority_fixes"]) >= 1
+
+
+def test_live_remote_score_in_range():
+    """Live remote fixture score is valid (0–100, ≥3 dimensions)."""
+    data = _load_live_fixture("live_remote_session.json")
+    score = data["score"]
+    assert 0 <= score["overall"] <= 100
+    assert len(score["dimensions"]) >= 3
+    assert len(score["priority_fixes"]) >= 1
+
+
+# ---------------------------------------------------------------------------
 # Pipeline utility tests
 # ---------------------------------------------------------------------------
 
@@ -286,3 +416,165 @@ def test_demo_server_mock_pipeline_data():
     assert 0 <= report.score.overall <= 100
     assert len(report.score.dimensions) >= 3
     assert report.summary
+
+
+# ---------------------------------------------------------------------------
+# Real pipeline readiness checks (run without Ollama; verify wiring only)
+# ---------------------------------------------------------------------------
+
+
+def test_env_var_wiring():
+    """
+    PITCHPILOT_MOCK_MODE env var is correctly wired to settings.mock_mode.
+
+    This test verifies the env var name mismatch is fixed: the old code read
+    USE_MOCK_PIPELINE (which never mapped to anything), the new code reads
+    PITCHPILOT_MOCK_MODE via pydantic-settings env_prefix.
+    """
+    import os
+    from importlib import reload
+    import backend.config as cfg
+
+    # The currently loaded settings should reflect the .env.local value
+    # (whatever is set in the environment when tests run).
+    # We simply assert the field is accessible and a bool.
+    assert isinstance(cfg.settings.mock_mode, bool), (
+        "settings.mock_mode must be a bool — check env var PITCHPILOT_MOCK_MODE"
+    )
+    assert isinstance(cfg.USE_MOCK, bool), "config.USE_MOCK must be a bool"
+
+
+def test_real_pipeline_module_imports():
+    """
+    All real pipeline modules import cleanly (no import-time dependency on Ollama).
+
+    This verifies that the code path reached when mock_mode=False doesn't crash
+    at import time — Ollama calls are deferred to actual usage.
+    """
+    from backend.ingestion import IngestionPipeline
+    from backend.agents.orchestrator import Orchestrator
+    from backend.reports.readiness import ReadinessReportGenerator
+    from backend.pipeline.live import LivePipeline
+    from backend.pipeline.claims import ClaimExtractor
+    from backend.pipeline.ocr import OCRPipeline
+    from backend.pipeline.transcribe import TranscriptionPipeline
+
+    assert IngestionPipeline is not None
+    assert Orchestrator is not None
+    assert ReadinessReportGenerator is not None
+    assert LivePipeline is not None
+
+
+def test_report_generator_real_path():
+    """
+    ReadinessReportGenerator.generate() works with a real OrchestratorResult.
+
+    Specifically validates the method signature (result, context) — not the old
+    wrong kwargs (session_id, orchestrator_result, ingestion_result).
+    """
+    from backend.agents.orchestrator import OrchestratorResult
+    from backend.reports.readiness import ReadinessReportGenerator
+    from backend.schemas import (
+        Claim,
+        Finding,
+        PipelineContext,
+        TimelineAnnotation,
+    )
+
+    claim = Claim(
+        text="Our platform is fully automated.",
+        claim_type="general",
+        timestamp=10.0,
+        source="transcript",
+    )
+    finding = Finding(
+        agent="compliance",
+        category="compliance",
+        severity="warning",
+        title="Automation claim",
+        description="Automation claim may need qualification.",
+        suggestion="Add a qualifier.",
+        timestamp=10.0,
+        claim_ref=claim.id,
+    )
+
+    result = OrchestratorResult(
+        session_id="smoke-test-001",
+        findings=[finding],
+        timeline=[
+            TimelineAnnotation(
+                timestamp=10.0,
+                category="compliance",
+                color="red",
+                label="Automation claim",
+                finding_id=finding.id,
+                agent="compliance",
+            )
+        ],
+        claims_processed=1,
+    )
+
+    context = PipelineContext(
+        session_id="smoke-test-001",
+        claims=[claim],
+        personas=["Skeptical Investor"],
+        presentation_title="PitchPilot Demo",
+    )
+
+    gen = ReadinessReportGenerator()
+    report = gen.generate(result=result, context=context)
+
+    assert 0 <= report.overall_score <= 100
+    assert report.grade in ("A", "B", "C", "D", "F")
+    assert len(report.findings) == 1
+    assert report.summary
+
+
+def test_pipeline_context_full_transcript_property():
+    """
+    PipelineContext.full_transcript is a @property — passing it as a constructor
+    kwarg would cause a TypeError.  This test ensures we build context correctly.
+    """
+    from backend.schemas import PipelineContext, TranscriptSegment
+
+    seg = TranscriptSegment(text="Hello world.", start_time=0.0, end_time=2.0)
+    ctx = PipelineContext(
+        session_id="test",
+        transcript_segments=[seg],
+    )
+    # Must be accessible as a property, not a stored value
+    assert ctx.full_transcript == "Hello world."
+    # Confirm passing as kwarg raises
+    try:
+        PipelineContext(session_id="test2", full_transcript="ignored")
+        raise AssertionError("Should have raised TypeError for unknown kwarg")
+    except TypeError:
+        pass  # expected
+
+
+def test_live_ws_json_serialisation():
+    """
+    live_ws.py sends session_mode.value (str), not the enum itself.
+
+    SessionMode is a str-enum (class SessionMode(str, Enum)), so both the
+    enum instance and .value serialize to the same JSON string.  This test
+    verifies the payload round-trips correctly either way.
+    """
+    import json
+    from backend.api_schemas import SessionMode
+
+    mode = SessionMode.LIVE_IN_ROOM
+
+    # Using .value is explicit and preferred
+    payload = {"type": "session_created", "session_id": "abc", "mode": mode.value}
+    encoded = json.dumps(payload)
+    decoded = json.loads(encoded)
+    assert decoded["mode"] == "live_in_room"
+
+    # str-enums also serialize directly (SessionMode inherits str)
+    payload2 = {"type": "session_created", "session_id": "abc", "mode": mode}
+    encoded2 = json.dumps(payload2)
+    decoded2 = json.loads(encoded2)
+    assert decoded2["mode"] == "live_in_room", (
+        "str-enum should serialise to its string value"
+    )

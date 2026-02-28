@@ -1,12 +1,17 @@
 /**
  * useLiveSession — manages the full lifecycle of a Livestream Mode session.
  *
+ * Supports three live modes:
+ *   "live"         — legacy rehearsal mode (audio + camera, nudges to screen)
+ *   "live_in_room" — earpiece coaching (earpiece_cue messages, audio-only UI)
+ *   "live_remote"  — presenter overlay (teleprompter, objection prep, script suggestions)
+ *
  * Responsibilities:
  *  - Request camera + microphone access (getUserMedia)
  *  - Open a WebSocket to /api/session/live
  *  - Record audio in 2-second chunks via MediaRecorder and send over WS
  *  - Capture periodic JPEG frame snapshots via canvas and send over WS
- *  - Parse incoming WS messages (findings, nudges, transcript updates)
+ *  - Parse all incoming WS messages and fan out to the appropriate state slice
  *  - Handle session finalization and fetch the completed report
  *  - Provide a mock mode (USE_MOCK=true) that simulates all of the above
  */
@@ -19,25 +24,28 @@ import {
 } from 'react';
 import { api, getLiveSessionWsUrl } from '@/lib/api';
 import type {
+  EarpieceCue,
   Finding,
   LiveFeedMessage,
   LiveNudge,
   LiveTranscriptSegment,
-  ReadinessReport,
+  ObjectionCard,
+  ScriptSuggestion,
+  SessionMode,
 } from '@/types';
-import type { PersonaConfig } from '@/types/api';
+import type { PersonaConfig, ReadinessReport } from '@/types/api';
 
 // ---------------------------------------------------------------------------
-// Mock mode flag — matches useSession.ts convention
+// Mock mode flag — read from Vite env var; defaults to true (safe for dev)
 // ---------------------------------------------------------------------------
-const USE_MOCK = true;
+const USE_MOCK = import.meta.env.VITE_USE_MOCK !== 'false';
 
 // Prefix bytes for binary WS frames (must match backend/live_ws.py)
 const MSG_AUDIO = 0x01;
 const MSG_FRAME = 0x02;
 
 // ---------------------------------------------------------------------------
-// Mock data
+// Mock data — shared
 // ---------------------------------------------------------------------------
 
 const MOCK_TRANSCRIPT_CHUNKS = [
@@ -54,6 +62,7 @@ const MOCK_FINDINGS: Omit<Finding, 'id'>[] = [
     title: "'Fully automated' conflicts with policy §3.2",
     detail: "Your enterprise policy requires human review for model outputs above a confidence threshold.",
     suggestion: "Rephrase to: 'Automated with optional human-in-the-loop review.'",
+    cue_hint: "compliance risk",
     timestamp: 8, live: true,
   },
   {
@@ -61,6 +70,7 @@ const MOCK_FINDINGS: Omit<Finding, 'id'>[] = [
     title: "Pacing is fast — slow down for key metrics",
     detail: "The 99.9% uptime claim was delivered quickly. Pause after key numbers to let them land.",
     suggestion: "Add a 1-second pause after stating uptime figures.",
+    cue_hint: "slow down",
     timestamp: 22, live: true,
   },
   {
@@ -68,6 +78,7 @@ const MOCK_FINDINGS: Omit<Finding, 'id'>[] = [
     title: "'Nothing leaves your network' needs qualification",
     detail: "The blanket privacy claim may be false for customers who enable optional cloud sync.",
     suggestion: "Add 'by default' and mention the opt-in cloud sync explicitly.",
+    cue_hint: "mention privacy",
     timestamp: 35, live: true,
   },
   {
@@ -75,6 +86,7 @@ const MOCK_FINDINGS: Omit<Finding, 'id'>[] = [
     title: "Speed metric lacks benchmark context",
     detail: "'3× faster' is compelling but the baseline is never stated.",
     suggestion: "Name the competitor and link to a reproducible benchmark.",
+    cue_hint: "name the benchmark",
     timestamp: 48, live: true,
   },
   {
@@ -82,7 +94,51 @@ const MOCK_FINDINGS: Omit<Finding, 'id'>[] = [
     title: "Skeptical Investor: differentiation is unclear",
     detail: "A skeptical investor would immediately ask how this differs from a well-prompted ChatGPT.",
     suggestion: "Lead with the on-device / privacy differentiator earlier.",
+    cue_hint: "ROI question likely",
     timestamp: 60, live: true,
+  },
+];
+
+// ---------------------------------------------------------------------------
+// Mock data — live_remote specific
+// ---------------------------------------------------------------------------
+
+const MOCK_TELEPROMPTER_SEQUENCES: string[][] = [
+  [
+    "Open with the 'black box' problem — why rehearsals fail",
+    "Introduce on-device privacy as the critical differentiator",
+    "Bridge: 'That's the problem — let's see PitchPilot solve it live'",
+  ],
+  [
+    "Walk through: upload → 3 agents analyze → readiness report",
+    "Highlight the 90-second turnaround on a 5-min video",
+    "Point to specific findings: compliance, coach, and persona tabs",
+  ],
+  [
+    "Transition to business model — enterprise compliance is the wedge",
+    "Mention fine-tuning: FunctionGemma 270M trained on our tool surface",
+    "Close: 'Three Gemma models. Everything local. No data leaves the device.'",
+  ],
+];
+
+const MOCK_OBJECTION_CARDS: Omit<ObjectionCard, 'id'>[] = [
+  {
+    question: "How is this different from asking ChatGPT to review my pitch?",
+    suggested_answer: "Three key differences: (1) on-device privacy — no data leaves the machine, (2) multimodal — analyzes video, slides, and audio together, not just text, (3) specialized agents fine-tuned for pitch evaluation.",
+    persona: "Skeptical Investor",
+    difficulty: "critical",
+  },
+  {
+    question: "What's the inference latency on a consumer machine?",
+    suggested_answer: "M2 MacBook Pro: ~90 seconds for a 5-minute video. All local — no cloud round-trip. In live mode the first cue arrives in under 8 seconds.",
+    persona: "Technical Reviewer",
+    difficulty: "warning",
+  },
+  {
+    question: "How do you ensure AI outputs don't create compliance liability?",
+    suggested_answer: "The tool surfaces items for human review — it doesn't make binding determinations. All outputs are framed as 'suggested review items' per our safe-use policy.",
+    persona: "Compliance Officer",
+    difficulty: "critical",
   },
 ];
 
@@ -92,6 +148,9 @@ const mockId = () => `live-${++_mockIdCounter}`;
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
+
+/** Controls which severity levels produce earpiece cues. */
+export type CueSensitivity = 'high' | 'medium' | 'low';
 
 export type LiveSessionState =
   | 'idle'
@@ -104,6 +163,7 @@ export type LiveSessionState =
 
 export interface UseLiveSessionReturn {
   state: LiveSessionState;
+  mode: SessionMode;
   sessionId: string | null;
   findings: Finding[];
   nudges: LiveNudge[];
@@ -112,9 +172,20 @@ export interface UseLiveSessionReturn {
   error: string | null;
   elapsedSeconds: number;
   mediaStream: MediaStream | null;
-  startSession: (personas: PersonaConfig[], docFiles?: File[]) => Promise<void>;
+  // live_in_room
+  cues: EarpieceCue[];
+  muted: boolean;
+  sensitivity: CueSensitivity;
+  toggleMute: () => void;
+  setSensitivity: (s: CueSensitivity) => void;
+  // live_remote
+  teleprompterPoints: string[];
+  objections: ObjectionCard[];
+  scriptSuggestions: ScriptSuggestion[];
+  startSession: (personas: PersonaConfig[], docFiles?: File[], sessionMode?: SessionMode, presentationMaterials?: File[]) => Promise<void>;
   endSession: () => void;
   dismissNudge: (id: string) => void;
+  dismissScriptSuggestion: (id: string) => void;
   reset: () => void;
 }
 
@@ -124,6 +195,7 @@ export interface UseLiveSessionReturn {
 
 export function useLiveSession(): UseLiveSessionReturn {
   const [state, setState] = useState<LiveSessionState>('idle');
+  const [mode, setMode] = useState<SessionMode>('live');
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [findings, setFindings] = useState<Finding[]>([]);
   const [nudges, setNudges] = useState<LiveNudge[]>([]);
@@ -132,6 +204,14 @@ export function useLiveSession(): UseLiveSessionReturn {
   const [error, setError] = useState<string | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [mediaStream, setMediaStream] = useState<MediaStream | null>(null);
+  // live_in_room
+  const [cues, setCues] = useState<EarpieceCue[]>([]);
+  const [muted, setMuted] = useState(false);
+  const [sensitivity, setSensitivity] = useState<CueSensitivity>('medium');
+  // live_remote
+  const [teleprompterPoints, setTeleprompterPoints] = useState<string[]>([]);
+  const [objections, setObjections] = useState<ObjectionCard[]>([]);
+  const [scriptSuggestions, setScriptSuggestions] = useState<ScriptSuggestion[]>([]);
 
   const wsRef = useRef<WebSocket | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -140,6 +220,7 @@ export function useLiveSession(): UseLiveSessionReturn {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const videoElRef = useRef<HTMLVideoElement | null>(null);
   const sessionStartRef = useRef<number>(0);
+  const sessionModeRef = useRef<SessionMode>('live');
   const mockIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const mockIndexRef = useRef(0);
 
@@ -184,7 +265,10 @@ export function useLiveSession(): UseLiveSessionReturn {
   // Mock mode
   // -------------------------------------------------------------------------
 
-  const startMockSession = useCallback(async (_personas: PersonaConfig[]) => {
+  const startMockSession = useCallback(async (
+    _personas: PersonaConfig[],
+    sessionMode: SessionMode = 'live',
+  ) => {
     setState('requesting_permissions');
     await new Promise((r) => setTimeout(r, 500));
 
@@ -196,17 +280,25 @@ export function useLiveSession(): UseLiveSessionReturn {
     setState('live');
     startTimer();
 
-    // Simulate a fake MediaStream (null — page will show placeholder)
     mockIndexRef.current = 0;
 
-    // Drip transcript + findings every few seconds
     let transcriptIdx = 0;
     let findingIdx = 0;
+    let teleprompterIdx = 0;
+    let objectionIdx = 0;
+    let lastTeleprompterSec = -20;
+    let lastObjectionSec = -30;
+
+    // Emit first teleprompter immediately for remote mode
+    if (sessionMode === 'live_remote') {
+      setTeleprompterPoints(MOCK_TELEPROMPTER_SEQUENCES[0]);
+      teleprompterIdx = 1;
+    }
 
     mockIntervalRef.current = setInterval(() => {
       const now = Math.floor((Date.now() - sessionStartRef.current) / 1000);
 
-      // New transcript segment every 3 seconds
+      // Transcript segment every 3 ticks
       if (transcriptIdx < MOCK_TRANSCRIPT_CHUNKS.length) {
         setTranscript((prev) => [
           ...prev,
@@ -219,25 +311,79 @@ export function useLiveSession(): UseLiveSessionReturn {
         transcriptIdx++;
       }
 
-      // New finding every 8 seconds
+      // Finding every ~8 seconds
       if (findingIdx < MOCK_FINDINGS.length && now > 0 && now % 8 === 0) {
         const raw = MOCK_FINDINGS[findingIdx];
         findingIdx++;
         const finding: Finding = { ...raw, id: mockId(), timestamp: now };
 
         if (finding.agent === 'coach' && finding.severity !== 'critical') {
-          // Emit as nudge
+          // Coach warnings → nudge toast
+          const nudgeId = finding.id;
           setNudges((prev) => [
             ...prev,
-            { id: finding.id, agent: finding.agent, message: finding.detail, suggestion: finding.suggestion, severity: finding.severity, elapsed: now },
+            { id: nudgeId, agent: finding.agent, message: finding.detail, suggestion: finding.suggestion, severity: finding.severity, elapsed: now },
           ]);
-          // Auto-dismiss nudge after 5 s
           setTimeout(() => {
-            setNudges((prev) => prev.filter((n) => n.id !== finding.id));
+            setNudges((prev) => prev.filter((n) => n.id !== nudgeId));
           }, 5000);
         } else {
           setFindings((prev) => [finding, ...prev]);
         }
+
+        // Mode-specific extras derived from the finding
+        if (sessionMode === 'live_remote' && finding.suggestion) {
+          const suggId = mockId();
+          const suggestion: ScriptSuggestion = {
+            id: suggId,
+            original: finding.title,
+            alternative: finding.suggestion,
+            reason: finding.detail.slice(0, 100),
+            agent: finding.agent,
+            elapsed: now,
+          };
+          setScriptSuggestions((prev) => [suggestion, ...prev]);
+          // Auto-dismiss after 12 seconds
+          setTimeout(() => {
+            setScriptSuggestions((prev) => prev.filter((s) => s.id !== suggId));
+          }, 12000);
+        }
+
+        if (sessionMode === 'live_in_room' && finding.cue_hint) {
+          const cueId = mockId();
+          const cue: EarpieceCue = {
+            id: cueId,
+            text: finding.cue_hint,
+            audio_b64: null,
+            priority: finding.severity,
+            category: finding.agent,
+            elapsed: now,
+          };
+          setCues((prev) => [...prev, cue]);
+        }
+      }
+
+      // Remote mode: teleprompter update every 20 seconds
+      if (
+        sessionMode === 'live_remote' &&
+        now - lastTeleprompterSec >= 20 &&
+        teleprompterIdx < MOCK_TELEPROMPTER_SEQUENCES.length
+      ) {
+        setTeleprompterPoints(MOCK_TELEPROMPTER_SEQUENCES[teleprompterIdx]);
+        teleprompterIdx++;
+        lastTeleprompterSec = now;
+      }
+
+      // Remote mode: objection prep card every 25 seconds
+      if (
+        sessionMode === 'live_remote' &&
+        now - lastObjectionSec >= 25 &&
+        objectionIdx < MOCK_OBJECTION_CARDS.length
+      ) {
+        const card = MOCK_OBJECTION_CARDS[objectionIdx];
+        objectionIdx++;
+        lastObjectionSec = now;
+        setObjections((prev) => [...prev, { ...card, id: mockId() }]);
       }
     }, 3000);
   }, [startTimer]);
@@ -249,9 +395,22 @@ export function useLiveSession(): UseLiveSessionReturn {
     setState('finalizing');
     await new Promise((r) => setTimeout(r, 2000));
 
-    // Build a mock report from accumulated findings
-    const { MOCK_REPORT } = await import('@/lib/mock-data');
-    setReport(MOCK_REPORT);
+    const mode = sessionModeRef.current;
+    const {
+      MOCK_REPORT,
+      MOCK_LIVE_INROOM_REPORT,
+      MOCK_LIVE_REMOTE_REPORT,
+    } = await import('@/lib/mock-data');
+
+    // Each live mode returns a mode-specific report so the review UI reflects
+    // what actually happened during that session type.
+    if (mode === 'live_in_room') {
+      setReport(MOCK_LIVE_INROOM_REPORT as unknown as ReadinessReport);
+    } else if (mode === 'live_remote') {
+      setReport(MOCK_LIVE_REMOTE_REPORT as unknown as ReadinessReport);
+    } else {
+      setReport(MOCK_REPORT as unknown as ReadinessReport);
+    }
     setState('complete');
   }, []);
 
@@ -269,7 +428,6 @@ export function useLiveSession(): UseLiveSessionReturn {
   }, []);
 
   const startFrameCapture = useCallback((stream: MediaStream) => {
-    // Create an off-screen video element to draw frames from
     const video = document.createElement('video');
     video.srcObject = stream;
     video.muted = true;
@@ -296,7 +454,12 @@ export function useLiveSession(): UseLiveSessionReturn {
     }, 5000);
   }, [sendBinary]);
 
-  const startRealSession = useCallback(async (personas: PersonaConfig[], docFiles: File[] = []) => {
+  const startRealSession = useCallback(async (
+    personas: PersonaConfig[],
+    docFiles: File[] = [],
+    sessionMode: SessionMode = 'live',
+    presentationMaterials: File[] = [],
+  ) => {
     setState('requesting_permissions');
 
     let stream: MediaStream;
@@ -311,7 +474,6 @@ export function useLiveSession(): UseLiveSessionReturn {
 
     setState('connecting');
 
-    // Read policy text from first doc file if provided
     let policyText = '';
     if (docFiles.length > 0) {
       try {
@@ -319,15 +481,33 @@ export function useLiveSession(): UseLiveSessionReturn {
       } catch { /* ignore non-text files */ }
     }
 
+    // Read text-extractable presentation materials (TXT/MD/DOCX); PDFs and
+    // binary formats will fail .text() gracefully and be skipped.
+    const presentationTextParts: string[] = [];
+    for (const f of presentationMaterials) {
+      try {
+        const text = await f.text();
+        if (text.trim()) presentationTextParts.push(`--- ${f.name} ---\n${text}`);
+      } catch { /* binary format — skip */ }
+    }
+    const presentationText = presentationTextParts.join('\n\n');
+
+    // Map frontend mode to backend WS init mode value
+    const wsMode = sessionMode === 'live_remote' ? 'live_remote'
+      : sessionMode === 'live_in_room' ? 'live_in_room'
+      : 'live';
+
     const ws = new WebSocket(getLiveSessionWsUrl());
     wsRef.current = ws;
 
     ws.onopen = () => {
       ws.send(JSON.stringify({
         type: 'init',
+        mode: wsMode,
         personas: personas.filter((p) => p.enabled).map((p) => p.label),
         policy_text: policyText,
-        title: 'Live Rehearsal',
+        presentation_text: presentationText,
+        title: sessionMode === 'live_remote' ? 'Live Remote Session' : 'Live Rehearsal',
       }));
     };
 
@@ -380,8 +560,48 @@ export function useLiveSession(): UseLiveSessionReturn {
             elapsed: msg.elapsed ?? 0,
           };
           setNudges((prev) => [...prev, nudge]);
-          // Auto-dismiss after 5 seconds
           setTimeout(() => setNudges((prev) => prev.filter((n) => n.id !== nudgeId)), 5000);
+          break;
+        }
+        // live_in_room
+        case 'earpiece_cue': {
+          const cue: EarpieceCue = {
+            id: mockId(),
+            text: msg.text ?? '',
+            audio_b64: msg.audio_b64 ?? null,
+            priority: msg.priority ?? 'warning',
+            category: msg.category ?? '',
+            elapsed: msg.elapsed ?? 0,
+          };
+          setCues((prev) => [...prev, cue]);
+          break;
+        }
+        // live_remote
+        case 'teleprompter': {
+          if (msg.points) {
+            setTeleprompterPoints(msg.points);
+          }
+          break;
+        }
+        case 'objection_prep': {
+          if (msg.questions) {
+            setObjections(msg.questions);
+          }
+          break;
+        }
+        case 'script_suggestion': {
+          const suggestion: ScriptSuggestion = {
+            id: mockId(),
+            original: msg.original ?? '',
+            alternative: msg.alternative ?? '',
+            reason: msg.reason ?? '',
+            agent: msg.agent ?? 'coach',
+            elapsed: msg.elapsed ?? 0,
+          };
+          setScriptSuggestions((prev) => [suggestion, ...prev]);
+          setTimeout(() => {
+            setScriptSuggestions((prev) => prev.filter((s) => s.id !== suggestion.id));
+          }, 12000);
           break;
         }
         case 'session_complete': {
@@ -392,7 +612,7 @@ export function useLiveSession(): UseLiveSessionReturn {
             const sid = msg.session_id ?? sessionId;
             if (sid) {
               const r = await api.getReport(sid);
-              setReport(r);
+              setReport(r as unknown as ReadinessReport);
             }
           } catch (err) {
             setError(`Could not fetch report: ${err instanceof Error ? err.message : err}`);
@@ -408,9 +628,7 @@ export function useLiveSession(): UseLiveSessionReturn {
       }
     };
 
-    // Start audio capture — defined inline to close over `stream` and `ws`
     function startAudioCapture(s: MediaStream) {
-      // Use audio-only stream for the recorder to avoid duplicating the video track
       const audioStream = new MediaStream(s.getAudioTracks());
       const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
         ? 'audio/webm;codecs=opus'
@@ -419,13 +637,32 @@ export function useLiveSession(): UseLiveSessionReturn {
       const recorder = new MediaRecorder(audioStream, { mimeType });
       mediaRecorderRef.current = recorder;
 
+      // The first ondataavailable blob is the WebM init segment (EBML header +
+      // Tracks). Subsequent blobs are continuation segments with no EBML header,
+      // so ffmpeg/whisper can't decode them standalone. We capture the init
+      // segment and prepend it to every subsequent blob so each chunk sent to
+      // the backend is a fully-decodable WebM file.
+      let initSegment: ArrayBuffer | null = null;
+
       recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) {
-          e.data.arrayBuffer().then((buf) => sendBinary(MSG_AUDIO, buf));
-        }
+        if (e.data.size === 0) return;
+        e.data.arrayBuffer().then((buf) => {
+          if (initSegment === null) {
+            // First chunk — this IS the init segment; save and send as-is.
+            initSegment = buf;
+            sendBinary(MSG_AUDIO, buf);
+          } else {
+            // Continuation segment — prepend init segment so the backend gets
+            // a self-contained WebM file it can hand directly to ffmpeg/whisper.
+            const combined = new Uint8Array(initSegment.byteLength + buf.byteLength);
+            combined.set(new Uint8Array(initSegment), 0);
+            combined.set(new Uint8Array(buf), initSegment.byteLength);
+            sendBinary(MSG_AUDIO, combined.buffer);
+          }
+        });
       };
 
-      recorder.start(2000); // 2-second timeslice
+      recorder.start(2000);
     }
   }, [startTimer, startFrameCapture, sendBinary, cleanup, sessionId, state]);
 
@@ -433,18 +670,31 @@ export function useLiveSession(): UseLiveSessionReturn {
   // Public API
   // -------------------------------------------------------------------------
 
-  const startSession = useCallback(async (personas: PersonaConfig[], docFiles: File[] = []) => {
+  const startSession = useCallback(async (
+    personas: PersonaConfig[],
+    docFiles: File[] = [],
+    sessionMode: SessionMode = 'live',
+    presentationMaterials: File[] = [],
+  ) => {
     setError(null);
     setFindings([]);
     setNudges([]);
     setTranscript([]);
     setReport(null);
     setElapsedSeconds(0);
+    setCues([]);
+    setMuted(false);
+    setSensitivity('medium');
+    setTeleprompterPoints([]);
+    setObjections([]);
+    setScriptSuggestions([]);
+    setMode(sessionMode);
+    sessionModeRef.current = sessionMode;
 
     if (USE_MOCK) {
-      await startMockSession(personas);
+      await startMockSession(personas, sessionMode);
     } else {
-      await startRealSession(personas, docFiles);
+      await startRealSession(personas, docFiles, sessionMode, presentationMaterials);
     }
   }, [startMockSession, startRealSession]);
 
@@ -460,7 +710,6 @@ export function useLiveSession(): UseLiveSessionReturn {
       setState('finalizing');
     }
 
-    // Stop audio recorder
     if (mediaRecorderRef.current?.state !== 'inactive') {
       try { mediaRecorderRef.current?.stop(); } catch { /* ignore */ }
     }
@@ -468,13 +717,20 @@ export function useLiveSession(): UseLiveSessionReturn {
     if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
   }, [endMockSession]);
 
+  const toggleMute = useCallback(() => setMuted((v) => !v), []);
+
   const dismissNudge = useCallback((id: string) => {
     setNudges((prev) => prev.filter((n) => n.id !== id));
+  }, []);
+
+  const dismissScriptSuggestion = useCallback((id: string) => {
+    setScriptSuggestions((prev) => prev.filter((s) => s.id !== id));
   }, []);
 
   const reset = useCallback(() => {
     cleanup();
     setState('idle');
+    setMode('live');
     setSessionId(null);
     setFindings([]);
     setNudges([]);
@@ -483,6 +739,12 @@ export function useLiveSession(): UseLiveSessionReturn {
     setError(null);
     setElapsedSeconds(0);
     setMediaStream(null);
+    setCues([]);
+    setMuted(false);
+    setSensitivity('medium');
+    setTeleprompterPoints([]);
+    setObjections([]);
+    setScriptSuggestions([]);
     mockIndexRef.current = 0;
   }, [cleanup]);
 
@@ -495,6 +757,7 @@ export function useLiveSession(): UseLiveSessionReturn {
 
   return {
     state,
+    mode,
     sessionId,
     findings,
     nudges,
@@ -503,9 +766,18 @@ export function useLiveSession(): UseLiveSessionReturn {
     error,
     elapsedSeconds,
     mediaStream,
+    cues,
+    muted,
+    sensitivity,
+    toggleMute,
+    setSensitivity,
+    teleprompterPoints,
+    objections,
+    scriptSuggestions,
     startSession,
     endSession,
     dismissNudge,
+    dismissScriptSuggestion,
     reset,
   };
 }

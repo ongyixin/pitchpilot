@@ -213,6 +213,72 @@ Sample policy documents for the Compliance agent are in `data/sample_policies/`:
 
 ---
 
+## Seeding Live Session Demos
+
+Live sessions (in-room or remote) produce the same readiness report as review mode, but with additional provenance fields (`session_mode`, `session_duration_seconds`, `live_cues_count`, `live_session_summary`). The `ResultsPage` detects these and renders a live-session info panel instead of a video player.
+
+### Instant completed live session via API
+
+```bash
+# Live in-room session (5:22 duration, 6 earpiece cues)
+curl -s -X POST "http://localhost:8000/api/session/demo-live?mode=live_in_room" | python3 -m json.tool
+
+# Live remote session (8:15 duration, 8 overlay cards)
+curl -s -X POST "http://localhost:8000/api/session/demo-live?mode=live_remote" | python3 -m json.tool
+```
+
+Poll `/api/session/{id}/status` until `"status": "complete"`, then fetch the full report:
+
+```bash
+SESSION_ID="<id from above>"
+
+# Poll
+curl "http://localhost:8000/api/session/$SESSION_ID/status"
+
+# Full report (includes session_mode, live_cues_count, live findings with cue_hint)
+curl "http://localhost:8000/api/session/$SESSION_ID/report" | python3 -m json.tool
+
+# Timeline annotations (same format as review mode)
+curl "http://localhost:8000/api/session/$SESSION_ID/timeline" | python3 -m json.tool
+
+# Agent findings
+curl "http://localhost:8000/api/session/$SESSION_ID/findings" | python3 -m json.tool
+```
+
+### Register a pending live session (WebSocket handshake)
+
+```bash
+curl -s -X POST http://localhost:8000/api/session/start-live \
+  -H "Content-Type: application/json" \
+  -d '{"mode": "live_in_room", "personas": ["Skeptical Investor"], "policy_text": ""}' \
+  | python3 -m json.tool
+```
+
+Returns `session_id` and `ws_url` for the WebSocket connection.
+
+### Static fixtures for offline testing
+
+Two pre-built completed live session fixtures live in `data/fixtures/`:
+
+| File | Mode | Duration | Cues |
+|---|---|---|---|
+| `live_inroom_session.json` | `live_in_room` | 5:22 | 6 earpiece cues |
+| `live_remote_session.json` | `live_remote` | 8:15 | 8 overlay cards |
+
+Both use the same `ReadinessReport` shape as `demo_session.json`. All findings carry `"live": true` and `cue_hint` on actionable items.
+
+### Live mode in the frontend demo flow
+
+When `USE_MOCK = true` in `useLiveSession.ts` (the default):
+
+1. Select **Live In-Room** or **Live Remote** on the SetupPage
+2. Click **Start** — the mock session begins immediately (no real microphone needed)
+3. Findings and earpiece cues arrive over the mock interval
+4. Click **End Session** — the finalizer runs for 2 seconds then transitions to **Results**
+5. `ResultsPage` shows the mode-specific report with the **LIVE IN-ROOM** / **LIVE REMOTE** badge, session duration, and cue count
+
+---
+
 ## Running Tests
 
 ```bash
@@ -225,13 +291,17 @@ pytest tests/test_smoke.py -v
 # API tests (spins up FastAPI in-process)
 pytest tests/test_api.py -v
 
+# Live session tests only
+pytest tests/test_api.py -v -k "live"
+pytest tests/test_smoke.py -v -k "live"
+
 # Specific test
 pytest tests/test_api.py -v -k "test_demo_session_full_cycle"
 ```
 
 Test coverage:
-- **`test_smoke.py`** — imports, schema validation, fixture file shape, demo data quality
-- **`test_api.py`** — full HTTP cycle via TestClient: start → poll → report → timeline → findings
+- **`test_smoke.py`** — imports, schema validation, fixture file shape, demo data quality, **live fixture validation** (cue_hints, live=true, duration fields)
+- **`test_api.py`** — full HTTP cycle via TestClient: start → poll → report → timeline → findings, **live session registration**, **demo-live in-room and remote full cycles**, **live report provenance fields**, **shared endpoint compatibility**
 
 ---
 
@@ -303,6 +373,8 @@ Training script: `fine_tuning/function_gemma/train.py`
 
 ### The meta-demo: PitchPilot analyses your own hackathon pitch
 
+**Act 1 — Review Mode (0:00–1:30)**
+
 1. **(0:00)** "PitchPilot helps teams stress-test pitches before high-stakes audiences. Everything runs on-device — pitches contain confidential material."
 
 2. **(0:30)** Upload a pre-recorded 2-min rehearsal and the sample policy docs in `data/sample_policies/`. Or click **"Load Demo Session"** to skip the upload.
@@ -311,17 +383,29 @@ Training script: `fine_tuning/function_gemma/train.py`
 
 4. **(1:00)** Click the **Compliance** tab: highlight the "fully automated" finding and read the policy reference aloud.
 
-5. **(1:20)** Click the **Coach** tab: show the "abrupt transition" and "jargon overload" findings.
+5. **(1:20)** Click a **timeline marker** — the timestamp shows exactly where the issue occurred in the video. Show the **Readiness Score** (72/100) and one **Priority Fix**.
 
-6. **(1:40)** Click the **Persona** tab: read the "How is this different from ChatGPT?" question.
+**Act 2 — Live In-Room Mode (1:30–2:15)**
 
-7. **(2:00)** Click a **timeline marker** — the timestamp shows exactly where the issue occurred.
+6. **(1:30)** Click **New Session**, select **Live In-Room** on the SetupPage. "Now imagine we're in the meeting room right now."
 
-8. **(2:15)** Show the **Readiness Score** (72/100) and the breakdown by dimension.
+7. **(1:40)** Click Start. The dark minimal UI appears — designed to be invisible to the audience. Deliver 20 seconds of pitch into the microphone.
 
-9. **(2:30)** Read one **Priority Fix**: "Fix the 'fully automated' claim — it directly contradicts Enterprise Data Policy §3.2."
+8. **(1:55)** Show earpiece cues appearing: **"compliance risk"** → **"slow down"** → **"ROI question likely"**. "Each cue arrived within 5–8 seconds of the problematic statement."
 
-10. **(2:45)** "Three Gemma models, each fine-tuned or specialised for its role, all running locally. No data leaves the device."
+9. **(2:05)** Click **End Session**. The finalizer runs. ResultsPage appears — same quality report, same findings, same timeline. But now see the **LIVE IN-ROOM** badge, **5:22 duration**, **6 cues** panel.
+
+**Act 3 — Close (2:15–2:30)**
+
+10. **(2:15)** "Three modes, one product. Review a recording before the meeting. Get coached during it. Review what happened after. All on-device, all private. This is what real-time persuasion support looks like."
+
+### Showing a completed live session without a real device
+
+```bash
+# Seed a completed live in-room session
+curl -s -X POST "http://localhost:8000/api/session/demo-live?mode=live_in_room" | python3 -m json.tool
+# then visit ResultsPage for that session ID to show the full live-mode results view
+```
 
 ---
 

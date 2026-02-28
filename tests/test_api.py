@@ -256,3 +256,161 @@ def test_timeline_annotations_are_sorted(client: TestClient):
     tl = client.get(f"/api/session/{session_id}/timeline").json()
     timestamps = [a["timestamp"] for a in tl["annotations"]]
     assert timestamps == sorted(timestamps), "Timeline annotations are not sorted"
+
+
+# ---------------------------------------------------------------------------
+# Live session registration endpoint
+# ---------------------------------------------------------------------------
+
+
+def test_start_live_session_default_mode(client: TestClient):
+    """POST /api/session/start-live returns session_id, ws_url, and mode."""
+    resp = client.post(
+        "/api/session/start-live",
+        json={"mode": "live_in_room", "personas": ["Skeptical Investor"], "policy_text": ""},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "session_id" in data
+    assert "ws_url" in data
+    assert data["mode"] == "live_in_room"
+    assert data["status"] in ("pending", "processing", "complete")
+
+
+def test_start_live_session_remote_mode(client: TestClient):
+    """POST /api/session/start-live with live_remote mode."""
+    resp = client.post(
+        "/api/session/start-live",
+        json={"mode": "live_remote", "personas": [], "policy_text": ""},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["mode"] == "live_remote"
+    assert "session_id" in data
+
+
+# ---------------------------------------------------------------------------
+# Demo-live endpoint (instant completed live session)
+# ---------------------------------------------------------------------------
+
+
+def test_demo_live_inroom_start(client: TestClient):
+    """POST /api/session/demo-live creates a pending live in-room session."""
+    resp = client.post("/api/session/demo-live?mode=live_in_room")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "session_id" in data
+    assert data["status"] in ("pending", "processing", "complete")
+    assert "in-room" in data["message"].lower() or "live" in data["message"].lower()
+
+
+def test_demo_live_remote_start(client: TestClient):
+    """POST /api/session/demo-live?mode=live_remote creates a pending live remote session."""
+    resp = client.post("/api/session/demo-live?mode=live_remote")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "session_id" in data
+    assert data["status"] in ("pending", "processing", "complete")
+
+
+def test_demo_live_inroom_full_cycle(client: TestClient):
+    """Full live in-room demo cycle: start → poll → report → timeline → findings."""
+    import time
+
+    resp = client.post("/api/session/demo-live?mode=live_in_room")
+    assert resp.status_code == 200
+    session_id = resp.json()["session_id"]
+
+    for _ in range(40):
+        s = client.get(f"/api/session/{session_id}/status").json()
+        if s["status"] == "complete":
+            break
+        time.sleep(0.1)
+    else:
+        pytest.fail(f"Live in-room session did not complete. Last status: {s}")
+
+    # Report
+    report = client.get(f"/api/session/{session_id}/report").json()
+    _validate_report(report)
+
+    # Report includes live-session provenance
+    assert report.get("session_mode") == "live_in_room", "Live in-room report missing session_mode"
+    assert report.get("session_duration_seconds", 0) > 0, "Missing session_duration_seconds"
+    assert report.get("live_cues_count", 0) > 0, "Missing live_cues_count"
+    assert report.get("live_session_summary"), "Missing live_session_summary"
+
+    # Findings all carry live=True
+    for finding in report["findings"]:
+        assert finding.get("live") is True, f"Finding {finding['id']} missing live=True"
+
+    # Timeline
+    tl = client.get(f"/api/session/{session_id}/timeline").json()
+    assert len(tl["annotations"]) > 0
+    timestamps = [a["timestamp"] for a in tl["annotations"]]
+    assert timestamps == sorted(timestamps), "Timeline not sorted"
+
+
+def test_demo_live_remote_full_cycle(client: TestClient):
+    """Full live remote demo cycle: start → poll → report → findings."""
+    import time
+
+    resp = client.post("/api/session/demo-live?mode=live_remote")
+    assert resp.status_code == 200
+    session_id = resp.json()["session_id"]
+
+    for _ in range(40):
+        s = client.get(f"/api/session/{session_id}/status").json()
+        if s["status"] == "complete":
+            break
+        time.sleep(0.1)
+    else:
+        pytest.fail(f"Live remote session did not complete. Last status: {s}")
+
+    report = client.get(f"/api/session/{session_id}/report").json()
+    _validate_report(report)
+
+    assert report.get("session_mode") == "live_remote", "Live remote report missing session_mode"
+    assert report.get("session_duration_seconds", 0) > 0
+    assert report.get("live_cues_count", 0) > 0
+
+    for finding in report["findings"]:
+        assert finding.get("live") is True, f"Finding {finding['id']} missing live=True"
+
+
+def test_live_report_has_cue_hints(client: TestClient):
+    """Live session report findings include cue_hint on critical/warning items."""
+    import time
+
+    resp = client.post("/api/session/demo-live?mode=live_in_room")
+    session_id = resp.json()["session_id"]
+
+    for _ in range(40):
+        s = client.get(f"/api/session/{session_id}/status").json()
+        if s["status"] == "complete":
+            break
+        time.sleep(0.1)
+
+    report = client.get(f"/api/session/{session_id}/report").json()
+    actionable = [f for f in report["findings"] if f["severity"] in ("critical", "warning")]
+    with_cues = [f for f in actionable if f.get("cue_hint")]
+    assert len(with_cues) >= 3, (
+        f"Expected ≥3 findings with cue_hint in live report, got {len(with_cues)}"
+    )
+
+
+def test_live_and_review_reports_share_same_endpoints(client: TestClient):
+    """Review /report, /timeline, /findings all work identically for live sessions."""
+    import time
+
+    resp = client.post("/api/session/demo-live")
+    session_id = resp.json()["session_id"]
+
+    for _ in range(40):
+        s = client.get(f"/api/session/{session_id}/status").json()
+        if s["status"] == "complete":
+            break
+        time.sleep(0.1)
+
+    assert client.get(f"/api/session/{session_id}/report").status_code == 200
+    assert client.get(f"/api/session/{session_id}/timeline").status_code == 200
+    assert client.get(f"/api/session/{session_id}/findings").status_code == 200

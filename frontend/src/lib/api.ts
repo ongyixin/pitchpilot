@@ -37,12 +37,16 @@ export const api = {
   startSession(
     video: File,
     policyDocs: File[] = [],
-    personas: string[] = ["Skeptical Investor", "Technical Reviewer", "Compliance Officer"]
+    personas: string[] = ["Skeptical Investor", "Technical Reviewer", "Compliance Officer"],
+    presentationMaterials: File[] = [],
   ): Promise<SessionStartResponse> {
     const form = new FormData();
     form.append("video", video);
     for (const doc of policyDocs) {
       form.append("policy_docs", doc);
+    }
+    for (const material of presentationMaterials) {
+      form.append("presentation_materials", material);
     }
     form.append("personas", personas.join(","));
     return request<SessionStartResponse>(`${BASE}/session/start`, {
@@ -69,6 +73,19 @@ export const api = {
   /** All agent findings and persona questions. */
   getFindings(sessionId: string): Promise<FindingsResponse> {
     return request<FindingsResponse>(`${BASE}/session/${sessionId}/findings`);
+  },
+
+  /**
+   * Start a demo session — no video upload needed.
+   * Backend populates the session with mock results.
+   */
+  startDemoSession(
+    personas: string[] = ["Skeptical Investor", "Technical Reviewer", "Compliance Officer"]
+  ): Promise<SessionStartResponse> {
+    const params = new URLSearchParams({ personas: personas.join(",") });
+    return request<SessionStartResponse>(`${BASE}/session/demo?${params}`, {
+      method: "POST",
+    });
   },
 };
 

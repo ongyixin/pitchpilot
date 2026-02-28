@@ -33,6 +33,8 @@ from backend.api_schemas import (
     DimensionScore,
     Finding,
     FindingsResponse,
+    LiveSessionStartRequest,
+    LiveSessionStartResponse,
     PersonaQuestion,
     ReadinessReport,
     ReadinessScore,
@@ -352,6 +354,9 @@ async def _run_mock_pipeline(session_id: str) -> None:
 async def start_session(
     video: UploadFile = File(..., description="Rehearsal video (mp4, mov, webm)"),
     policy_docs: list[UploadFile] = File(default=[], description="Optional policy PDFs"),
+    presentation_materials: list[UploadFile] = File(
+        default=[], description="Optional presentation materials (slides, script, speaker notes)"
+    ),
     personas: str = Form(
         default="Skeptical Investor,Technical Reviewer,Compliance Officer",
         description="Comma-separated audience personas",
@@ -370,6 +375,7 @@ async def start_session(
         id=UUID(session_id),
         video_filename=video.filename or "upload.mp4",
         policy_filenames=[f.filename or "" for f in policy_docs],
+        presentation_filenames=[f.filename or "" for f in presentation_materials],
         personas=persona_list,
         created_at=datetime.now(timezone.utc).isoformat(),
     )
@@ -381,8 +387,9 @@ async def start_session(
         # Read uploads into memory then hand off to background task
         video_bytes = await video.read()
         doc_bytes = [(f.filename or "doc.pdf", await f.read()) for f in policy_docs]
+        material_bytes = [(f.filename or "material.pdf", await f.read()) for f in presentation_materials]
         asyncio.create_task(
-            _run_real_pipeline(session_id, video_bytes, video.filename or "upload.mp4", doc_bytes)
+            _run_real_pipeline(session_id, video_bytes, video.filename or "upload.mp4", doc_bytes, material_bytes)
         )
 
     return SessionStartResponse(
@@ -392,11 +399,49 @@ async def start_session(
     )
 
 
+@app.post(
+    "/api/session/demo",
+    response_model=SessionStartResponse,
+    summary="Start an instant demo session (no file upload required)",
+    tags=["session"],
+)
+async def start_demo_session(
+    personas: Optional[str] = None,
+) -> SessionStartResponse:
+    """
+    Creates a demo session immediately populated with mock results.
+    Useful for demos — no video upload needed.
+    """
+    session_id = str(uuid4())
+    persona_list = (
+        [p.strip() for p in personas.split(",") if p.strip()]
+        if personas
+        else ["Skeptical Investor", "Technical Reviewer", "Compliance Officer"]
+    )
+
+    session = Session(
+        id=UUID(session_id),
+        video_filename="demo_pitch.mp4",
+        policy_filenames=["enterprise_data_policy.pdf", "approved_messaging_guide.pdf"],
+        personas=persona_list,
+        created_at=datetime.now(timezone.utc).isoformat(),
+    )
+    _sessions[session_id] = session
+    asyncio.create_task(_run_mock_pipeline(session_id))
+
+    return SessionStartResponse(
+        session_id=UUID(session_id),
+        status=SessionStatus.PENDING,
+        message="Demo session started",
+    )
+
+
 async def _run_real_pipeline(
     session_id: str,
     video_bytes: bytes,
     video_filename: str,
     doc_files: list[tuple[str, bytes]],
+    material_files: list[tuple[str, bytes]] | None = None,
 ) -> None:
     """
     Background task that runs the real ingestion + orchestrator pipeline.
@@ -405,12 +450,19 @@ async def _run_real_pipeline(
     the frontend polling sees live milestones.
     """
     import traceback  # noqa: PLC0415
+    import logging  # noqa: PLC0415
 
     from backend.agents.orchestrator import Orchestrator  # noqa: PLC0415
     from backend.ingestion import IngestionPipeline  # noqa: PLC0415
     from backend.reports.readiness import ReadinessReportGenerator  # noqa: PLC0415
-    from backend.schemas import PipelineContext  # noqa: PLC0415
+    from backend.schemas import (  # noqa: PLC0415
+        Claim as SchemaClaim,
+        PipelineContext,
+        SlideOCR,
+        TranscriptSegment as SchemaTranscriptSegment,
+    )
 
+    _log = logging.getLogger(__name__)
     session = _sessions.get(session_id)
     if session is None:
         return
@@ -424,10 +476,16 @@ async def _run_real_pipeline(
             s.progress_message = message
 
     try:
-        # Save policy docs to temp files
+        # Save policy docs and presentation materials to temp files
         doc_paths: list[str] = []
         tmp_dir = tempfile.mkdtemp(prefix=f"pitchpilot_{session_id[:8]}_")
         for fname, fbytes in doc_files:
+            p = Path(tmp_dir) / fname
+            p.write_bytes(fbytes)
+            doc_paths.append(str(p))
+        # Presentation materials are stored alongside policy docs so the
+        # ingestion pipeline can extract text from slides/scripts.
+        for fname, fbytes in (material_files or []):
             p = Path(tmp_dir) / fname
             p.write_bytes(fbytes)
             doc_paths.append(str(p))
@@ -444,35 +502,66 @@ async def _run_real_pipeline(
 
         _update(88, "Running agent analysis (6/7)")
 
-        # Stage 6: orchestrator
-        orchestrator = Orchestrator()
-        await orchestrator.initialize()
+        # Stage 6: orchestrator — convert data_models types to schemas types
+        # PipelineContext uses schemas dataclasses; ingestion returns data_models Pydantic models
+
+        schema_segments = [
+            SchemaTranscriptSegment(
+                text=seg.text,
+                start_time=seg.start_time,
+                end_time=seg.end_time,
+                confidence=seg.confidence,
+            )
+            for seg in ingestion_result.transcript_segments
+        ]
+
+        schema_slide_ocr = [
+            SlideOCR(
+                slide_index=i,
+                timestamp=block.timestamp or 0.0,
+                raw_text=block.text,
+            )
+            for i, block in enumerate(ingestion_result.ocr_blocks)
+            if block.source_type.value == "video_frame"
+        ]
+
+        schema_claims = [
+            SchemaClaim(
+                id=str(c.claim_id),
+                text=c.text,
+                claim_type="general",
+                timestamp=c.timestamp_start,
+                source=c.source.value if hasattr(c.source, "value") else str(c.source),
+                context_before="",
+                context_after="",
+            )
+            for c in ingestion_result.claims
+        ]
+
+        # Policy text: OCR text from non-video (uploaded document) blocks
+        policy_text = "\n".join(
+            b.text for b in ingestion_result.ocr_blocks
+            if b.source_type.value != "video_frame"
+        )
 
         context = PipelineContext(
             session_id=session_id,
-            claims=ingestion_result.claims,
-            transcript_segments=ingestion_result.transcript_segments,
-            slide_ocr=ingestion_result.ocr_blocks,
-            policy_text="\n".join(
-                b.text for b in ingestion_result.ocr_blocks
-                if b.source_type.value != "video_frame"
-            ),
+            claims=schema_claims,
+            transcript_segments=schema_segments,
+            slide_ocr=schema_slide_ocr,
+            policy_text=policy_text,
             personas=session.personas,
-            full_transcript=" ".join(
-                s.text for s in ingestion_result.transcript_segments
-            ),
         )
+
+        orchestrator = Orchestrator()
+        await orchestrator.initialize()
         orch_result = await orchestrator.run(context, progress_callback=_update)
 
         _update(98, "Generating readiness report (7/7)")
 
-        # Stage 7: report
+        # Stage 7: report — signature is generate(result, context)
         report_gen = ReadinessReportGenerator()
-        report = report_gen.generate(
-            session_id=session_id,
-            orchestrator_result=orch_result,
-            ingestion_result=ingestion_result,
-        )
+        report = report_gen.generate(result=orch_result, context=context)
 
         # Map internal report to API schema
         session.report = _map_report(session_id, report, ingestion_result)
@@ -486,8 +575,7 @@ async def _run_real_pipeline(
         session.status = SessionStatus.FAILED
         session.error_message = str(exc)
         session.progress_message = f"Pipeline error: {exc}"
-        import logging  # noqa: PLC0415
-        logging.getLogger(__name__).error(f"Real pipeline failed: {exc}\n{tb}")
+        _log.error(f"Real pipeline failed for session {session_id}: {exc}\n{tb}")
 
 
 @app.get(
@@ -552,12 +640,58 @@ async def get_findings(session_id: str) -> FindingsResponse:
     )
 
 
+@app.post(
+    "/api/session/start-live",
+    response_model=LiveSessionStartResponse,
+    summary="Pre-register a live session and get a WebSocket URL",
+    tags=["session"],
+)
+async def start_live_session(body: LiveSessionStartRequest) -> LiveSessionStartResponse:
+    """
+    Register a pending live session before opening the WebSocket.
+
+    Clients can use the returned `ws_url` to connect to the WS endpoint and
+    send the `init` message.  The session is already stored in the in-memory
+    store so REST polling endpoints work immediately.
+
+    Supported modes: live_in_room, live_remote, live (legacy).
+    """
+    session_id = str(uuid4())
+
+    session = Session(
+        id=UUID(session_id),
+        video_filename="live_session.webm",
+        policy_filenames=[],
+        personas=body.personas,
+        mode=body.mode,
+        status=SessionStatus.PENDING,
+        progress=0,
+        progress_message="Awaiting WebSocket connection",
+        created_at=datetime.now(timezone.utc).isoformat(),
+    )
+    _sessions[session_id] = session
+
+    # Build the WS URL relative to the server.  In production this should be
+    # constructed from a base URL config; for the hackathon we derive it from
+    # the request origin via a hardcoded default.
+    ws_url = f"ws://localhost:8000/api/session/live"
+
+    return LiveSessionStartResponse(
+        session_id=UUID(session_id),
+        ws_url=ws_url,
+        mode=body.mode,
+        status=SessionStatus.PENDING,
+        message=f"Session pre-registered for {body.mode.value} mode. Connect to ws_url.",
+    )
+
+
 @app.websocket("/api/session/live")
 async def live_session_endpoint(websocket: WebSocket) -> None:
     """
     WebSocket endpoint for Livestream Mode (Real-Time Copilot).
 
     See backend/live_ws.py for the full protocol documentation.
+    Supports modes: live (legacy), live_in_room, live_remote.
     """
     from backend.live_ws import live_session_ws  # noqa: PLC0415
     await live_session_ws(websocket, _sessions)
@@ -566,6 +700,52 @@ async def live_session_endpoint(websocket: WebSocket) -> None:
 @app.get("/health", tags=["meta"])
 async def health() -> dict:
     return {"status": "ok", "version": app.version}
+
+
+@app.get("/api/readiness", tags=["meta"])
+async def pipeline_readiness() -> dict:
+    """
+    Startup diagnostic: reports whether the real pipeline is reachable.
+
+    Returns a dict with:
+      - mock_mode: bool — whether PITCHPILOT_MOCK_MODE is true
+      - ollama_available: bool — whether Ollama is reachable (only checked in real mode)
+      - ollama_url: str
+    """
+    from backend.config import settings as _s  # noqa: PLC0415
+
+    result: dict = {
+        "mock_mode": _s.mock_mode,
+        "ollama_url": _s.ollama_base_url,
+        "ollama_available": None,
+    }
+
+    if not _s.mock_mode:
+        try:
+            from backend.models.gemma3 import Gemma3Adapter  # noqa: PLC0415
+            adapter = Gemma3Adapter()
+            result["ollama_available"] = await adapter.is_available()
+        except Exception as exc:
+            result["ollama_available"] = False
+            result["ollama_error"] = str(exc)
+
+    return result
+
+
+@app.on_event("startup")
+async def _startup() -> None:
+    """Log current pipeline mode on startup."""
+    import logging  # noqa: PLC0415
+    from backend.config import settings as _s  # noqa: PLC0415
+
+    log = logging.getLogger(__name__)
+    if _s.mock_mode:
+        log.info("PitchPilot starting in MOCK mode — no Ollama required")
+    else:
+        log.info(
+            f"PitchPilot starting in REAL mode — Ollama at {_s.ollama_base_url}. "
+            "Ensure models are loaded: `ollama pull gemma3:4b && ollama pull gemma-3n:e4b`"
+        )
 
 
 @app.on_event("shutdown")
@@ -582,77 +762,128 @@ async def _shutdown() -> None:
 
 def _map_report(session_id: str, internal_report, ingestion_result) -> ReadinessReport:
     """
-    Map the internal ReadinessReport (from backend.schemas) to the API schema.
-    Falls back to basic mock-style fields if attributes differ.
+    Map an internal schemas.ReadinessReport to the API-level api_schemas.ReadinessReport.
+
+    schemas.ReadinessReport (dataclass) has:
+      overall_score, grade, dimensions (dict[str, DimensionScore]),
+      findings (list[Finding]), stakeholder_questions, priority_fixes, summary
+
+    api_schemas.ReadinessReport (Pydantic) has:
+      score (ReadinessScore with .overall, .dimensions list, .priority_fixes),
+      findings, persona_questions, claims, summary
     """
     from backend.api_schemas import (  # noqa: PLC0415
         Claim as ApiClaim,
         ClaimType,
-        DimensionScore,
+        DimensionScore as ApiDimScore,
         Finding as ApiFinding,
         PersonaQuestion as ApiPQ,
         ReadinessScore,
         Severity,
+        AgentType,
     )
 
-    # Convert findings
+    severity_safe = {
+        "info": Severity.INFO,
+        "warning": Severity.WARNING,
+        "critical": Severity.CRITICAL,
+    }
+    agent_safe = {
+        "coach": AgentType.COACH,
+        "compliance": AgentType.COMPLIANCE,
+        "persona": AgentType.PERSONA,
+    }
+
+    # Convert findings: schemas.Finding.description → api.Finding.detail
     api_findings: list[ApiFinding] = []
     for f in getattr(internal_report, "findings", []):
+        raw_severity = getattr(f, "severity", "info")
+        raw_agent = getattr(f, "agent", "coach")
         api_findings.append(
             ApiFinding(
-                agent=getattr(f, "agent", "coach"),
-                severity=Severity(getattr(f, "severity", "info")),
+                agent=agent_safe.get(raw_agent, AgentType.COACH),
+                severity=severity_safe.get(raw_severity, Severity.INFO),
                 title=getattr(f, "title", "Finding"),
-                detail=getattr(f, "detail", ""),
+                # schemas.Finding uses .description; api_schemas.Finding uses .detail
+                detail=getattr(f, "description", getattr(f, "detail", "")),
                 suggestion=getattr(f, "suggestion", None),
-                timestamp=getattr(f, "timestamp", None),
+                timestamp=getattr(f, "timestamp", 0.0) or 0.0,
                 claim_id=getattr(f, "claim_ref", None),
+                policy_reference=getattr(f, "metadata", {}).get("policy_reference") if hasattr(f, "metadata") else None,
+                persona=getattr(f, "metadata", {}).get("persona") if hasattr(f, "metadata") else None,
             )
         )
 
-    # Convert persona questions
+    # Convert stakeholder questions from persona agent findings
     api_pqs: list[ApiPQ] = []
-    for pq in getattr(internal_report, "persona_questions", []):
+    for pq in getattr(internal_report, "stakeholder_questions", []):
+        raw_diff = getattr(pq, "difficulty", "medium")
+        diff_map = {"easy": Severity.INFO, "medium": Severity.WARNING, "hard": Severity.CRITICAL}
         api_pqs.append(
             ApiPQ(
                 persona=getattr(pq, "persona", "Unknown"),
                 question=getattr(pq, "question", ""),
-                difficulty=getattr(pq, "difficulty", "medium"),
+                difficulty=diff_map.get(raw_diff, Severity.WARNING),
                 timestamp=getattr(pq, "timestamp", None),
             )
         )
 
-    # Convert claims
+    # Convert data_models.Claim list from ingestion result
     api_claims: list[ApiClaim] = []
+    claim_type_map = {
+        "compliance_sensitive": ClaimType.PRIVACY,
+        "comparison_claim": ClaimType.COMPARISON,
+        "technical_claim": ClaimType.FEATURE,
+        "value_proposition": ClaimType.FEATURE,
+        "automation_claim": ClaimType.FEATURE,
+        "privacy_claim": ClaimType.PRIVACY,
+        "accuracy_claim": ClaimType.METRIC,
+        "financial_claim": ClaimType.METRIC,
+    }
     for c in ingestion_result.claims[:20]:
+        raw_cat = getattr(c, "category", None)
+        cat_val = raw_cat.value if hasattr(raw_cat, "value") else str(raw_cat or "")
         api_claims.append(
             ApiClaim(
                 text=c.text,
-                claim_type=ClaimType.FEATURE,
+                claim_type=claim_type_map.get(cat_val, ClaimType.FEATURE),
                 timestamp=c.timestamp_start,
-                source="transcript",
+                source=c.source.value if hasattr(c.source, "value") else str(c.source),
                 confidence=c.confidence,
             )
         )
 
-    score_obj = getattr(internal_report, "score", None)
-    overall = getattr(score_obj, "overall", 75) if score_obj else 75
-    dimensions = getattr(score_obj, "dimensions", []) if score_obj else []
-    api_dimensions = [
-        DimensionScore(
-            dimension=getattr(d, "dimension", "clarity"),
-            score=getattr(d, "score", 75),
-            rationale=getattr(d, "rationale", ""),
-        )
-        for d in dimensions
-    ]
+    # Build dimension list from schemas.ReadinessReport.dimensions dict
+    raw_dims = getattr(internal_report, "dimensions", {})
+    api_dimensions: list[ApiDimScore] = []
+    if isinstance(raw_dims, dict):
+        for name, ds in raw_dims.items():
+            api_dimensions.append(
+                ApiDimScore(
+                    dimension=name.capitalize(),
+                    score=getattr(ds, "score", 75),
+                    rationale=getattr(ds, "summary", ""),
+                )
+            )
+    elif isinstance(raw_dims, list):
+        for ds in raw_dims:
+            api_dimensions.append(
+                ApiDimScore(
+                    dimension=getattr(ds, "dimension", getattr(ds, "name", "Clarity")),
+                    score=getattr(ds, "score", 75),
+                    rationale=getattr(ds, "rationale", getattr(ds, "summary", "")),
+                )
+            )
+
+    overall = getattr(internal_report, "overall_score", None) or 75
+    priority_fixes = getattr(internal_report, "priority_fixes", [])
 
     return ReadinessReport(
         session_id=UUID(session_id),
         score=ReadinessScore(
             overall=overall,
             dimensions=api_dimensions,
-            priority_fixes=getattr(score_obj, "priority_fixes", []) if score_obj else [],
+            priority_fixes=priority_fixes,
         ),
         findings=api_findings,
         persona_questions=api_pqs,

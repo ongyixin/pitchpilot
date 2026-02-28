@@ -1,27 +1,56 @@
 """
-WebSocket endpoint for PitchPilot Livestream Mode.
+WebSocket endpoint for PitchPilot Live Modes.
 
 Protocol summary
 ----------------
 Client → Server (JSON text frames):
-  {"type": "init",        "personas": [...], "policy_text": "...", "title": "..."}
+  {"type": "init",        "mode": "rehearsal|in_room|remote", "personas": [...], "policy_text": "...", "title": "..."}
   {"type": "end_session"}
+  {"type": "ping"}
 
 Client → Server (binary frames):
   Prefixed with a 1-byte type tag:
-    0x01  audio_chunk   — WebM/Opus audio data
-    0x02  frame_snapshot — JPEG frame from canvas
+    0x01  audio_chunk     — WebM/Opus audio data (sent every ~2 s)
+    0x02  frame_snapshot  — JPEG frame from canvas (sent every ~5 s)
 
 Server → Client (JSON text frames):
-  {"type": "session_created",   "session_id": "..."}
-  {"type": "transcript_update", "segments": [...], "elapsed": 12.3}
-  {"type": "finding",           "finding": {...},  "elapsed": 15.1}
-  {"type": "nudge",             "agent": "...", "message": "...", "severity": "...", "elapsed": 20.0}
-  {"type": "session_complete",  "session_id": "..."}
-  {"type": "error",             "message": "..."}
+  {"type": "session_created",    "session_id": "...", "mode": "..."}
+  {"type": "transcript_update",  "segments": [...], "elapsed": 12.3}
+  {"type": "finding",            "finding": {...}, "elapsed": 15.1}
+  {"type": "nudge",              "agent": "...", "message": "...", "severity": "...", "elapsed": 20.0}
+  {"type": "earpiece_cue",       "text": "slow down", "audio_b64": "...", "priority": "warning",
+                                  "category": "coach", "elapsed": 22.0}       [in_room only]
+  {"type": "overlay_card",       "agent": "...", "severity": "...", "title": "...", "detail": "...",
+                                  "suggestion": "...", "cue_text": "...", "elapsed": 22.0}  [remote only]
+  {"type": "teleprompter",       "points": ["...", "..."], "slide_context": "...", "elapsed": 25.0}  [remote only]
+  {"type": "objection_prep",     "questions": [{"question": "...", "suggested_answer": "...",
+                                  "persona": "...", "difficulty": "..."}], "elapsed": 40.0}  [remote only]
+  {"type": "script_suggestion",  "original": "...", "alternative": "...", "reason": "...",
+                                  "agent": "...", "elapsed": 30.0}             [remote only]
+  {"type": "status",             "message": "...", "progress": 42}
+  {"type": "finalizing",         "message": "...", "elapsed": 180.0}
+  {"type": "session_complete",   "session_id": "..."}
+  {"type": "error",              "message": "..."}
 
 The session produced by this endpoint is stored in the shared _sessions dict
 and can be retrieved via the existing REST endpoints once complete.
+
+Mode-specific behaviour
+-----------------------
+rehearsal  — legacy / default.  Findings sent as "nudge" and "finding" messages.
+             No cue synthesis, no teleprompter, no objection prep.
+
+in_room    — After each extract_and_route() cycle findings are passed through
+             CueSynthesizer.process_for_in_room().  Qualifying cues are
+             synthesised to audio via TTSService and sent as "earpiece_cue".
+             Rate-limited to 1 cue per CUE_MIN_INTERVAL seconds.
+
+remote     — Findings sent as "overlay_card" messages (richer than nudge).
+             CueSynthesizer.process_for_remote() produces "script_suggestion"
+             messages for compliance/coach findings with rewording.
+             Teleprompter points regenerated every TELEPROMPTER_UPDATE_INTERVAL
+             seconds or on slide change.
+             Objection prep regenerated on a slower cadence (~60 s).
 """
 
 from __future__ import annotations
@@ -40,10 +69,12 @@ from backend.agents.orchestrator import Orchestrator
 from backend.api_schemas import (
     AgentType,
     DimensionScore,
+    EarpieceCue,
     Finding as ApiFinding,
     PersonaQuestion,
     ReadinessReport,
     ReadinessScore,
+    ScriptSuggestion,
     Session,
     SessionMode,
     SessionStatus,
@@ -51,10 +82,17 @@ from backend.api_schemas import (
     TimelineAnnotation,
     TimelineCategory,
 )
-from backend.config import settings
+from backend.config import (
+    CUE_MIN_INTERVAL,
+    LIVE_EXTRACT_INTERVAL,
+    TELEPROMPTER_UPDATE_INTERVAL,
+    settings,
+)
+from backend.pipeline.cue_synth import CueSynthesizer
 from backend.pipeline.live import LivePipeline
 from backend.reports.readiness import ReadinessReportGenerator
 from backend.schemas import Finding as SchemaFinding
+from backend.services.tts import TTSService
 
 
 # ---------------------------------------------------------------------------
@@ -63,6 +101,9 @@ from backend.schemas import Finding as SchemaFinding
 
 MSG_AUDIO = 0x01
 MSG_FRAME = 0x02
+
+# How often (seconds) to send objection prep updates in remote mode
+_OBJECTION_PREP_INTERVAL = 60.0
 
 
 # ---------------------------------------------------------------------------
@@ -81,7 +122,6 @@ async def live_session_ws(websocket: WebSocket, sessions: dict) -> None:
     await websocket.accept()
     session_id = str(uuid.uuid4())
     pipeline: LivePipeline | None = None
-    elapsed_offset: float = 0.0
     start_wall: float = time.monotonic()
     frame_index: int = 0
 
@@ -100,7 +140,20 @@ async def live_session_ws(websocket: WebSocket, sessions: dict) -> None:
 
         personas: list[str] = init_msg.get("personas", [])
         policy_text: str = init_msg.get("policy_text", "")
-        title: str = init_msg.get("title", "Live Rehearsal")
+        title: str = init_msg.get("title", "Live Session")
+        raw_mode: str = init_msg.get("mode", "rehearsal")
+
+        # Normalise mode string → SessionMode enum
+        mode_map = {
+            "in_room":    SessionMode.LIVE_IN_ROOM,
+            "live_in_room": SessionMode.LIVE_IN_ROOM,
+            "remote":     SessionMode.LIVE_REMOTE,
+            "live_remote": SessionMode.LIVE_REMOTE,
+            "rehearsal":  SessionMode.LIVE,
+            "live":       SessionMode.LIVE,
+        }
+        session_mode: SessionMode = mode_map.get(raw_mode, SessionMode.LIVE)
+        pipeline_mode = raw_mode if raw_mode in ("in_room", "remote") else "rehearsal"
 
         # Create session record
         session = Session(
@@ -108,7 +161,7 @@ async def live_session_ws(websocket: WebSocket, sessions: dict) -> None:
             video_filename="live_session.webm",
             policy_filenames=[],
             personas=personas,
-            mode=SessionMode.LIVE,
+            mode=session_mode,
             status=SessionStatus.PROCESSING,
             progress=0,
             progress_message="Live session active",
@@ -116,7 +169,7 @@ async def live_session_ws(websocket: WebSocket, sessions: dict) -> None:
         )
         sessions[session_id] = session
 
-        # Initialise pipeline
+        # Initialise live pipeline with mode
         orchestrator = Orchestrator()
         pipeline = LivePipeline(
             session_id=session_id,
@@ -124,36 +177,71 @@ async def live_session_ws(websocket: WebSocket, sessions: dict) -> None:
             personas=personas,
             policy_text=policy_text,
             presentation_title=title,
+            mode=pipeline_mode,
         )
         await pipeline.initialize()
 
-        await _send(websocket, {"type": "session_created", "session_id": session_id})
-        logger.info(f"[ws] Session ready | session={session_id} | personas={personas}")
+        # Cue synthesis + TTS (shared across all live modes)
+        synth = CueSynthesizer(mode=session_mode)
+        tts = TTSService()
+
+        await _send(websocket, {
+            "type": "session_created",
+            "session_id": session_id,
+            "mode": session_mode.value,
+        })
+        logger.info(
+            f"[ws] Session ready | session={session_id} | mode={session_mode} | personas={personas}"
+        )
 
         start_wall = time.monotonic()
-        # How often (seconds) to run extract_and_route after accumulating audio
-        extract_interval = 10.0
+
+        # Live modes use a shorter extract interval (5 s vs 10 s)
+        extract_interval = (
+            LIVE_EXTRACT_INTERVAL
+            if session_mode in (SessionMode.LIVE_IN_ROOM, SessionMode.LIVE_REMOTE)
+            else 10.0
+        )
         last_extract_at = start_wall
+        last_teleprompter_at = start_wall
+        last_objection_prep_at = start_wall
 
         # ------------------------------------------------------------------
         # Phase 2: Main message loop
         # ------------------------------------------------------------------
         while True:
             try:
-                # Use a short receive timeout so we can run periodic tasks
                 message = await asyncio.wait_for(
                     websocket.receive(),
                     timeout=1.0,
                 )
             except asyncio.TimeoutError:
-                # Periodic claim extraction + routing
                 now = time.monotonic()
+                elapsed = now - start_wall
+
+                # Periodic claim extraction + routing
                 if now - last_extract_at >= extract_interval:
                     last_extract_at = now
-                    elapsed = now - start_wall
                     findings = await pipeline.extract_and_route()
                     for f in findings:
-                        await _send_finding(websocket, f, elapsed)
+                        await _dispatch_finding(
+                            websocket, f, elapsed, synth, tts, pipeline, session_mode
+                        )
+
+                # Remote-mode: periodic teleprompter updates
+                if session_mode == SessionMode.LIVE_REMOTE:
+                    slide_changed = pipeline.consume_slide_changed()
+                    if (
+                        slide_changed
+                        or now - last_teleprompter_at >= TELEPROMPTER_UPDATE_INTERVAL
+                    ):
+                        last_teleprompter_at = now
+                        await _send_teleprompter(websocket, pipeline, elapsed)
+
+                    if now - last_objection_prep_at >= _OBJECTION_PREP_INTERVAL:
+                        last_objection_prep_at = now
+                        await _send_objection_prep(websocket, pipeline, elapsed)
+
                 continue
             except WebSocketDisconnect:
                 logger.info(f"[ws] Client disconnected | session={session_id}")
@@ -185,7 +273,6 @@ async def live_session_ws(websocket: WebSocket, sessions: dict) -> None:
                 elapsed = time.monotonic() - start_wall
 
                 if tag == MSG_AUDIO:
-                    # Transcribe and send transcript update
                     segments = await pipeline.ingest_audio_chunk(payload, offset_seconds=elapsed)
                     if segments:
                         await _send(websocket, {
@@ -207,11 +294,18 @@ async def live_session_ws(websocket: WebSocket, sessions: dict) -> None:
                         last_extract_at = now
                         findings = await pipeline.extract_and_route()
                         for f in findings:
-                            await _send_finding(websocket, f, elapsed)
+                            await _dispatch_finding(
+                                websocket, f, elapsed, synth, tts, pipeline, session_mode
+                            )
 
                 elif tag == MSG_FRAME:
                     await pipeline.ingest_frame(payload, timestamp=elapsed, frame_index=frame_index)
                     frame_index += 1
+
+                    # Trigger teleprompter immediately on slide change (remote mode)
+                    if session_mode == SessionMode.LIVE_REMOTE and pipeline.consume_slide_changed():
+                        last_teleprompter_at = time.monotonic()
+                        await _send_teleprompter(websocket, pipeline, elapsed)
 
     except WebSocketDisconnect:
         logger.info(f"[ws] WebSocket disconnected (outer) | session={session_id}")
@@ -222,13 +316,127 @@ async def live_session_ws(websocket: WebSocket, sessions: dict) -> None:
         except Exception:
             pass
     finally:
-        # If session exists but wasn't finalized cleanly, mark it failed
         if session_id in sessions:
             s = sessions[session_id]
             if s.status == SessionStatus.PROCESSING:
                 s.status = SessionStatus.FAILED
                 s.error_message = "Session ended unexpectedly"
         logger.info(f"[ws] Handler exiting | session={session_id}")
+
+
+# ---------------------------------------------------------------------------
+# Mode-aware finding dispatch
+# ---------------------------------------------------------------------------
+
+
+async def _dispatch_finding(
+    websocket: WebSocket,
+    finding: SchemaFinding,
+    elapsed: float,
+    synth: CueSynthesizer,
+    tts: TTSService,
+    pipeline: LivePipeline,
+    mode: SessionMode,
+) -> None:
+    """
+    Route a finding to the appropriate WS message type based on session mode.
+
+    rehearsal  → nudge / finding (existing behaviour)
+    in_room    → earpiece_cue  (rate-limited, TTS audio)
+                 + finding (always — kept for post-session report)
+    remote     → overlay_card + script_suggestion (if available)
+                 + finding (always — kept for post-session report)
+    """
+    api_f = _schema_finding_to_api(finding)
+
+    # Always persist the raw finding for post-session report
+    await _send_finding_raw(websocket, api_f, elapsed)
+
+    if mode == SessionMode.LIVE_IN_ROOM:
+        cues = synth.process_for_in_room([api_f], elapsed)
+        for cue in cues:
+            audio_b64 = await tts.synthesize(cue.text)
+            await _send(websocket, {
+                "type": "earpiece_cue",
+                "text": cue.text,
+                "audio_b64": audio_b64,
+                "priority": cue.priority,
+                "category": cue.category,
+                "elapsed": elapsed,
+            })
+            logger.info(f"[ws] earpiece_cue emitted | text='{cue.text}' | session={pipeline.session_id}")
+
+    elif mode == SessionMode.LIVE_REMOTE:
+        # Overlay card (richer than nudge — always shown in presenter panel)
+        if api_f.severity in (Severity.WARNING, Severity.CRITICAL):
+            cue_text = synth._compress_cue_for_remote(api_f)
+            await _send(websocket, {
+                "type": "overlay_card",
+                "agent": api_f.agent,
+                "severity": api_f.severity,
+                "title": api_f.title,
+                "detail": api_f.detail,
+                "suggestion": api_f.suggestion,
+                "cue_text": cue_text,
+                "category": api_f.agent,
+                "elapsed": elapsed,
+            })
+
+        # Script suggestion for compliance or clarity findings with rewording
+        suggestions = synth.process_for_remote([api_f], elapsed)
+        for s in suggestions:
+            await _send(websocket, {
+                "type": "script_suggestion",
+                "original": s.original,
+                "alternative": s.alternative,
+                "reason": s.reason,
+                "agent": s.agent,
+                "elapsed": elapsed,
+            })
+
+
+# ---------------------------------------------------------------------------
+# Teleprompter + objection prep dispatch (remote mode)
+# ---------------------------------------------------------------------------
+
+
+async def _send_teleprompter(
+    websocket: WebSocket,
+    pipeline: LivePipeline,
+    elapsed: float,
+) -> None:
+    """Generate and send a teleprompter update for remote mode."""
+    try:
+        points = await pipeline.generate_teleprompter_points()
+        if points:
+            await _send(websocket, {
+                "type": "teleprompter",
+                "points": points,
+                "slide_context": pipeline.current_slide_text()[:300],
+                "elapsed": elapsed,
+            })
+            logger.debug(f"[ws] teleprompter sent | points={len(points)}")
+    except Exception as exc:
+        logger.warning(f"[ws] teleprompter dispatch failed: {exc}")
+
+
+async def _send_objection_prep(
+    websocket: WebSocket,
+    pipeline: LivePipeline,
+    elapsed: float,
+) -> None:
+    """Generate and send objection prep questions for remote mode."""
+    try:
+        questions = await pipeline.generate_objection_prep()
+        if questions:
+            await _send(websocket, {
+                "type": "objection_prep",
+                "questions": questions,
+                "elapsed": elapsed,
+            })
+            logger.debug(f"[ws] objection_prep sent | questions={len(questions)}")
+    except Exception as exc:
+        logger.warning(f"[ws] objection_prep dispatch failed: {exc}")
 
 
 # ---------------------------------------------------------------------------
@@ -261,22 +469,18 @@ async def _handle_end_session(
         session.error_message = str(exc)
         return
 
-    # Convert schema findings → api findings for the report
     api_findings = [_schema_finding_to_api(f) for f in result.findings]
     api_timeline = _build_api_timeline(api_findings)
 
-    # Generate the readiness report using the existing generator
     try:
         report_gen = ReadinessReportGenerator()
         report = report_gen.generate(
             result=result,
             context=pipeline._build_pipeline_context(),
         )
-        # Convert internal ReadinessReport → api_schemas.ReadinessReport
         api_report = _schema_report_to_api(report, session_id, api_findings, api_timeline)
     except Exception as exc:
         logger.error(f"[ws] Report generation failed: {exc}")
-        # Fallback: build a minimal report from findings
         api_report = _build_fallback_report(session_id, api_findings, api_timeline)
 
     session.report = api_report
@@ -304,23 +508,11 @@ async def _send(ws: WebSocket, payload: dict) -> None:
         logger.debug(f"[ws] Send failed: {exc}")
 
 
-async def _send_finding(ws: WebSocket, finding: SchemaFinding, elapsed: float) -> None:
-    """Send a finding event. Emits 'nudge' for info/warning from coach, 'finding' otherwise."""
-    api_f = _schema_finding_to_api(finding)
-    payload_finding = {
-        "id": api_f.id,
-        "agent": api_f.agent,
-        "severity": api_f.severity,
-        "title": api_f.title,
-        "detail": api_f.detail,
-        "suggestion": api_f.suggestion,
-        "timestamp": api_f.timestamp,
-        "policy_reference": api_f.policy_reference,
-        "persona": api_f.persona,
-        "live": True,
-    }
-
-    # Lightweight pacing/clarity nudges go as 'nudge' type
+async def _send_finding_raw(ws: WebSocket, api_f: ApiFinding, elapsed: float) -> None:
+    """
+    Send a finding as 'nudge' (coach info/warning) or 'finding' (everything else).
+    This is the baseline message sent regardless of mode — always persisted.
+    """
     if api_f.agent == AgentType.COACH and api_f.severity in (Severity.INFO, Severity.WARNING):
         await _send(ws, {
             "type": "nudge",
@@ -331,17 +523,34 @@ async def _send_finding(ws: WebSocket, finding: SchemaFinding, elapsed: float) -
             "elapsed": elapsed,
         })
     else:
-        await _send(ws, {
-            "type": "finding",
-            "finding": payload_finding,
-            "elapsed": elapsed,
-        })
+        payload = {
+            "id": api_f.id,
+            "agent": api_f.agent,
+            "severity": api_f.severity,
+            "title": api_f.title,
+            "detail": api_f.detail,
+            "suggestion": api_f.suggestion,
+            "timestamp": api_f.timestamp,
+            "policy_reference": api_f.policy_reference,
+            "persona": api_f.persona,
+            "live": True,
+            "cue_hint": api_f.cue_hint,
+        }
+        await _send(ws, {"type": "finding", "finding": payload, "elapsed": elapsed})
 
 
 def _schema_finding_to_api(f: SchemaFinding) -> ApiFinding:
     """Convert a schemas.Finding to an api_schemas.Finding."""
-    agent_map = {"coach": AgentType.COACH, "compliance": AgentType.COMPLIANCE, "persona": AgentType.PERSONA}
-    severity_map = {"info": Severity.INFO, "warning": Severity.WARNING, "critical": Severity.CRITICAL}
+    agent_map = {
+        "coach": AgentType.COACH,
+        "compliance": AgentType.COMPLIANCE,
+        "persona": AgentType.PERSONA,
+    }
+    severity_map = {
+        "info": Severity.INFO,
+        "warning": Severity.WARNING,
+        "critical": Severity.CRITICAL,
+    }
 
     agent = agent_map.get(f.agent, AgentType.COACH)
     severity = severity_map.get(f.severity, Severity.INFO)
@@ -357,6 +566,7 @@ def _schema_finding_to_api(f: SchemaFinding) -> ApiFinding:
         claim_id=f.claim_ref,
         policy_reference=f.metadata.get("policy_reference") if f.metadata else None,
         persona=f.metadata.get("persona") if f.metadata else None,
+        cue_hint=f.metadata.get("cue_hint") if f.metadata else None,
         live=True,
     )
 
@@ -451,7 +661,11 @@ def _build_fallback_report(
         score=ReadinessScore(
             overall=base,
             dimensions=[
-                DimensionScore(dimension="Live Session", score=base, rationale="Based on live findings."),
+                DimensionScore(
+                    dimension="Live Session",
+                    score=base,
+                    rationale="Based on live findings.",
+                ),
             ],
             priority_fixes=priority_fixes,
         ),

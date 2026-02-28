@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Clock } from 'lucide-react';
 import { cn, formatTime } from '@/lib/utils';
 import type { Finding, AgentName } from '@/types/api';
@@ -26,11 +26,26 @@ interface Props {
   findings: Finding[];
   onSelectFinding?: (finding: Finding) => void;
   activeTimestamp?: number;
+  activeFindingId?: string;
 }
 
-export function FindingsPanel({ findings, onSelectFinding, activeTimestamp }: Props) {
+export function FindingsPanel({ findings, onSelectFinding, activeTimestamp, activeFindingId }: Props) {
   const [activeTab, setActiveTab] = useState<AgentName | 'all'>('all');
   const [expanded, setExpanded] = useState<string | null>(null);
+  const itemRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  useEffect(() => {
+    if (!activeFindingId) return;
+    const finding = findings.find((f) => f.id === activeFindingId);
+    if (!finding) return;
+
+    setActiveTab(finding.agent as AgentName);
+    setExpanded(activeFindingId);
+
+    requestAnimationFrame(() => {
+      itemRefs.current[activeFindingId]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+  }, [activeFindingId, findings]);
 
   const filtered = activeTab === 'all' ? findings : findings.filter((f) => f.agent === activeTab);
 
@@ -92,6 +107,7 @@ export function FindingsPanel({ findings, onSelectFinding, activeTimestamp }: Pr
           return (
             <div
               key={finding.id}
+              ref={(el) => { itemRefs.current[finding.id] = el; }}
               className={cn(
                 'transition-colors',
                 isActive ? 'bg-bg-elevated' : '',
@@ -143,11 +159,11 @@ export function FindingsPanel({ findings, onSelectFinding, activeTimestamp }: Pr
               {isExpanded && (
                 <div className="px-4 pb-4 space-y-3 bg-bg-elevated border-t-2 border-bg-border">
                   <p className="font-mono text-xs text-text-secondary leading-relaxed pt-3">
-                    {finding.description}
+                    {finding.detail}
                   </p>
-                  {finding.claim_text && (
+                  {finding.policy_reference && (
                     <blockquote className="border-l-4 border-bg-border pl-3 font-mono text-xs text-text-muted italic">
-                      "{finding.claim_text}"
+                      {finding.policy_reference}
                     </blockquote>
                   )}
                   {finding.suggestion && (

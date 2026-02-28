@@ -1,64 +1,77 @@
-// TypeScript types matching backend schemas.py
+// TypeScript types matching backend api_schemas.py
 
 export type Severity = 'info' | 'warning' | 'critical';
-export type ClaimType = 'product' | 'compliance_sensitive' | 'technical' | 'comparison' | 'general';
+export type ClaimType = 'feature' | 'metric' | 'comparison' | 'privacy' | 'pricing' | 'security' | 'other';
 export type AgentName = 'coach' | 'compliance' | 'persona';
-export type MarkerColor = 'red' | 'yellow' | 'blue' | 'purple';
+
+export interface Claim {
+  id: string;
+  text: string;
+  claim_type: ClaimType;
+  timestamp: number;
+  source: string;
+  slide_number?: number;
+  confidence: number;
+}
 
 export interface Finding {
   id: string;
   agent: AgentName;
   severity: Severity;
-  category: string;
   title: string;
-  description: string;
-  timestamp?: number;
-  slide_ref?: string;
+  detail: string;
   suggestion?: string;
-  claim_text?: string;
+  timestamp?: number;
+  claim_id?: string;
+  policy_reference?: string;
   persona?: string;
+  live?: boolean;
+  cue_hint?: string;
 }
 
 export interface PersonaQuestion {
   id: string;
   persona: string;
   question: string;
-  difficulty: 'easy' | 'medium' | 'hard';
-  category: string;
+  follow_up?: string;
   timestamp?: number;
-  suggested_answer?: string;
+  difficulty: Severity;
 }
 
 export interface TimelineAnnotation {
-  timestamp: number;
-  category: string;
-  color: MarkerColor;
-  label: string;
+  id: string;
   finding_id: string;
-  agent: AgentName;
+  category: string;
+  timestamp: number;
+  label: string;
+  severity: Severity;
 }
 
 export interface DimensionScore {
-  name: string;
+  dimension: string;
   score: number;
-  weight: number;
-  issues_count: number;
-  critical_count: number;
-  summary: string;
+  rationale: string;
+}
+
+export interface ReadinessScore {
+  overall: number;
+  dimensions: DimensionScore[];
+  priority_fixes: string[];
 }
 
 export interface ReadinessReport {
   session_id: string;
-  overall_score: number;
-  grade: string;
-  dimensions: Record<string, DimensionScore>;
-  top_issues: Finding[];
-  priority_fixes: string[];
-  stakeholder_questions: PersonaQuestion[];
+  score: ReadinessScore;
   findings: Finding[];
-  timeline: TimelineAnnotation[];
+  persona_questions: PersonaQuestion[];
+  claims: Claim[];
   summary: string;
-  agents_run: string[];
+  created_at: string;
+  /** Present on reports produced by live sessions; absent for review/upload mode */
+  session_mode?: string;
+  session_duration_seconds?: number;
+  live_cues_count?: number;
+  live_session_summary?: string;
 }
 
 // API response types
@@ -66,25 +79,21 @@ export interface ReadinessReport {
 export type SessionStatus =
   | 'pending'
   | 'processing'
-  | 'extracting_frames'
-  | 'transcribing'
-  | 'extracting_claims'
-  | 'running_agents'
-  | 'scoring'
   | 'complete'
-  | 'error';
+  | 'failed';
 
 export interface StatusResponse {
   session_id: string;
   status: SessionStatus;
-  progress: number; // 0–100
-  current_step: string;
-  error?: string;
+  progress: number;
+  progress_message: string;
+  error_message?: string;
 }
 
 export interface StartSessionResponse {
   session_id: string;
   status: SessionStatus;
+  message: string;
 }
 
 // Persona definitions for UI configuration

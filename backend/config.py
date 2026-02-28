@@ -30,7 +30,11 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(
         env_prefix="PITCHPILOT_",
-        env_file=str(PROJECT_ROOT / ".env"),
+        # Read .env.local first, then .env as fallback (later files take lower priority)
+        env_file=(
+            str(PROJECT_ROOT / ".env.local"),
+            str(PROJECT_ROOT / ".env"),
+        ),
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -42,7 +46,8 @@ class Settings(BaseSettings):
         default=True,
         description=(
             "When True, all model calls are replaced with deterministic stubs. "
-            "Set PITCHPILOT_MOCK_MODE=false to enable real model inference."
+            "Set PITCHPILOT_MOCK_MODE=false (in .env.local) to enable real model inference. "
+            "Note: the env var is PITCHPILOT_MOCK_MODE, not USE_MOCK_PIPELINE."
         ),
     )
 
@@ -77,7 +82,7 @@ class Settings(BaseSettings):
         description="Base URL for the Ollama REST API",
     )
     gemma3n_model: str = Field(
-        default="gemma-3n:e4b",
+        default="gemma3n:e4b",
         description="Ollama model tag for Gemma 3n",
     )
     gemma3_model: str = Field(
@@ -295,11 +300,31 @@ GRADE_THRESHOLDS: list[tuple[int, str]] = [
     (0, "F"),
 ]
 
-# Live-mode constants (flat for easy import)
+# Content-richness scoring (positive marking component)
+#
+# Each dimension starts at CONTENT_SCORE_FLOOR and earns bonus points
+# proportional to how many claims the AI was able to analyse.
+# Penalty deductions then apply from that earned ceiling.
+#
+#   content_base = CONTENT_SCORE_FLOOR
+#                  + CONTENT_SCORE_BONUS * min(claims, CONTENT_SATURATION_CLAIMS)
+#                                        / CONTENT_SATURATION_CLAIMS
+#
+# Examples (before any deductions):
+#   0 claims  →  50   (barely enough to assess)
+#   8 claims  →  74
+#  15+ claims →  95   (full bonus — substantive content analysed)
+CONTENT_SCORE_FLOOR: int = 50        # baseline score with zero claims detected
+CONTENT_SCORE_BONUS: int = 45        # max additional points from content richness
+CONTENT_SATURATION_CLAIMS: int = 15  # claims needed to earn the full bonus
+
+# ---------------------------------------------------------------------------
+# Live-mode constants (imported by cue_synth.py, tts.py, live_ws.py)
+# ---------------------------------------------------------------------------
 CUE_MIN_INTERVAL: float = settings.cue_min_interval_seconds
 CUE_DEDUP_WINDOW: float = settings.cue_dedup_window_seconds
 TTS_ENGINE: str = settings.tts_engine
-TTS_CUE_BANK_PATH: str = settings.tts_cue_bank_path
+TTS_CUE_BANK_PATH: str = settings.tts_cue_bank_path or str(DATA_DIR / "cue_bank")
 TELEPROMPTER_UPDATE_INTERVAL: float = settings.teleprompter_update_interval
 OBJECTION_PREP_UPDATE_INTERVAL: float = settings.objection_prep_update_interval
 LIVE_EXTRACT_INTERVAL: float = settings.live_extract_interval_seconds

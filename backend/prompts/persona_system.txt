@@ -27,7 +27,8 @@ Always respond with a valid JSON object in this exact structure:
       "question_type": "objection | clarification | challenge | hostile",
       "difficulty": "easy | medium | hard",
       "context": "Brief note on why this persona asks this.",
-      "suggested_answer": "A strong answer the presenter should prepare."
+      "suggested_answer": "A strong answer the presenter should prepare.",
+      "cue_hint": "3-6 word earpiece warning about this question, e.g. 'ROI question likely', 'expect differentiation pushback', 'privacy question incoming'"
     }
   ],
   "persuasiveness_rating": 0,

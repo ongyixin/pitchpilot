@@ -71,12 +71,16 @@ Return a JSON object with a 'claims' list. Each claim must have:
                 privacy_claim, accuracy_claim, financial_claim, unclassified
   - "confidence": float 0-1
   - "evidence": verbatim quote from the source text that supports the claim
+  - "timestamp_start": start time in seconds where this claim occurs, taken from the
+                       [Xs-Ys] markers in the transcript (use the segment start time)
 
 Only extract claims that can be factually evaluated or challenged.
 Do not extract opinions, greetings, or transition phrases.
 Return only the JSON object, no explanation."""
 
 _CLAIM_PROMPT_TEMPLATE = """Extract claims from the following presentation text.
+Each transcript segment is prefixed with its time range, e.g. [3.2s-7.8s].
+Use those time markers to populate "timestamp_start" for each claim.
 
 TRANSCRIPT SEGMENTS:
 {transcript_text}
@@ -84,7 +88,7 @@ TRANSCRIPT SEGMENTS:
 SLIDE / DOCUMENT TEXT (OCR):
 {ocr_text}
 
-Return JSON: {{"claims": [{{"text": "...", "category": "...", "confidence": 0.9, "evidence": "..."}}]}}"""
+Return JSON: {{"claims": [{{"text": "...", "category": "...", "confidence": 0.9, "evidence": "...", "timestamp_start": 0.0}}]}}"""
 
 
 class ClaimExtractor:
@@ -226,20 +230,29 @@ class ClaimExtractor:
             category = _parse_category(item.get("category", "unclassified"))
             evidence_text = (item.get("evidence") or claim_text).strip()
 
-            matching_segs = [
-                s for s in segments
-                if evidence_text.lower()[:40] in s.text.lower()
-                or s.text.lower()[:40] in evidence_text.lower()
-            ]
+            matching_segs: list[TranscriptSegment] = []
 
-            if matching_segs:
-                ts_start = matching_segs[0].start_time
-                ts_end = matching_segs[-1].end_time
+            # 1. Use model-returned timestamp if present and valid
+            model_ts = item.get("timestamp_start")
+            if isinstance(model_ts, (int, float)) and window_start <= model_ts <= window_end:
+                ts_start = float(model_ts)
+                ts_end = ts_start + 2.0
                 source = ClaimSource.TRANSCRIPT
             else:
-                ts_start = window_start
-                ts_end = window_end
-                source = ClaimSource.TRANSCRIPT
+                # 2. Try to match evidence back to transcript segments via word overlap
+                matching_segs = _match_segments_by_overlap(evidence_text, segments)
+
+                if matching_segs:
+                    ts_start = matching_segs[0].start_time
+                    ts_end = matching_segs[-1].end_time
+                    source = ClaimSource.TRANSCRIPT
+                else:
+                    # 3. Estimate position proportionally from where evidence appears
+                    #    in the combined transcript text
+                    ts_start, ts_end = _estimate_timestamp(
+                        evidence_text, segments, window_start, window_end
+                    )
+                    source = ClaimSource.TRANSCRIPT
 
             evidence = [
                 EvidenceItem(
@@ -321,6 +334,73 @@ def _build_transcript_windows(
         current_start += step
 
     return windows if windows else [segments]
+
+
+def _match_segments_by_overlap(evidence: str, segments: list[TranscriptSegment]) -> list[TranscriptSegment]:
+    """
+    Find segments whose text meaningfully overlaps with the evidence string.
+
+    Uses word-level Jaccard overlap rather than a rigid prefix check so that
+    paraphrased or partially-quoted evidence still gets matched.
+    """
+    def words(text: str) -> set[str]:
+        return set(re.sub(r"[^a-z0-9 ]", "", text.lower()).split())
+
+    ev_words = words(evidence)
+    if not ev_words:
+        return []
+
+    scored: list[tuple[float, TranscriptSegment]] = []
+    for seg in segments:
+        seg_words = words(seg.text)
+        if not seg_words:
+            continue
+        overlap = len(ev_words & seg_words) / len(ev_words | seg_words)
+        if overlap >= 0.25:  # at least 25% word overlap
+            scored.append((overlap, seg))
+
+    if not scored:
+        return []
+
+    scored.sort(key=lambda x: -x[0])
+    best_score = scored[0][0]
+    # Return all segments within 20% of the best score, preserving time order
+    good = [seg for score, seg in scored if score >= best_score * 0.8]
+    good.sort(key=lambda s: s.start_time)
+    return good
+
+
+def _estimate_timestamp(
+    evidence: str,
+    segments: list[TranscriptSegment],
+    window_start: float,
+    window_end: float,
+) -> tuple[float, float]:
+    """
+    Estimate where in the window the evidence occurs by finding its approximate
+    character position within the combined transcript text.
+
+    Falls back to the midpoint of the window if no estimate is possible.
+    """
+    if not segments:
+        mid = (window_start + window_end) / 2
+        return mid, mid + 2.0
+
+    combined = " ".join(s.text for s in segments).lower()
+    needle = evidence.lower()[:60]
+
+    # Try to find position of evidence in the combined text
+    pos = combined.find(needle[:20]) if len(needle) >= 20 else -1
+    if pos < 0:
+        # Use midpoint as fallback
+        mid = (window_start + window_end) / 2
+        return mid, mid + 2.0
+
+    # Map character position to time
+    fraction = pos / max(len(combined), 1)
+    duration = window_end - window_start
+    ts_start = window_start + fraction * duration
+    return ts_start, ts_start + 2.0
 
 
 def _build_ocr_text(ocr_blocks: list[OCRBlock]) -> str:

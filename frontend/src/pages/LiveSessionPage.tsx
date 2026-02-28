@@ -17,10 +17,10 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   Radio, StopCircle, AlertCircle, AlertTriangle, Info,
-  Mic, Clock, ChevronDown, X,
+  Mic, Clock, ChevronDown, X, ArrowLeft,
 } from 'lucide-react';
 import { cn, formatTime } from '@/lib/utils';
-import type { Finding, LiveNudge, LiveTranscriptSegment, Severity } from '@/types';
+import type { Finding, LiveNudge, Severity } from '@/types';
 import type { UseLiveSessionReturn } from '@/hooks/useLiveSession';
 
 // ---------------------------------------------------------------------------
@@ -39,11 +39,6 @@ const SEVERITY_ICON: Record<Severity, typeof AlertCircle> = {
   info:     Info,
 };
 
-const SEVERITY_STYLE: Record<Severity, string> = {
-  critical: 'border-accent-red/60 bg-accent-red/5 text-accent-red',
-  warning:  'border-accent-amber/60 bg-[#8C6500]/5 text-accent-amber',
-  info:      'border-accent-blue/60 bg-accent-blue/5 text-accent-blue',
-};
 
 // ---------------------------------------------------------------------------
 // Sub-components
@@ -52,8 +47,8 @@ const SEVERITY_STYLE: Record<Severity, string> = {
 function RecordingDot() {
   return (
     <span className="inline-flex items-center gap-1.5">
-      <span className="w-2 h-2 rounded-full bg-accent-red animate-pulse" />
-      <span className="font-mono text-xs text-accent-red tracking-widest uppercase">Live</span>
+      <span className="w-2.5 h-2.5 rounded-full bg-accent-red animate-pulse" />
+      <span className="font-mono text-sm text-accent-red tracking-widest uppercase">Live</span>
     </span>
   );
 }
@@ -68,8 +63,8 @@ function ElapsedTimer({ seconds }: { seconds: number }) {
     String(s).padStart(2, '0'),
   ].filter(Boolean);
   return (
-    <span className="font-mono text-sm text-text-secondary tabular-nums">
-      <Clock size={12} className="inline mr-1 opacity-60" />
+    <span className="font-mono text-base text-text-secondary tabular-nums">
+      <Clock size={16} className="inline mr-1.5 opacity-60" />
       {parts.join(':')}
     </span>
   );
@@ -99,10 +94,10 @@ function FindingCard({ finding, isNew }: FindingCardProps) {
     >
       <button
         onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-start gap-2.5 px-3 py-2.5 text-left"
+        className="w-full flex items-start gap-3 px-4 py-3 text-left"
       >
         <SevIcon
-          size={13}
+          size={16}
           className={cn(
             'flex-shrink-0 mt-0.5',
             finding.severity === 'critical' ? 'text-accent-red'
@@ -111,40 +106,40 @@ function FindingCard({ finding, isNew }: FindingCardProps) {
           )}
         />
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-0.5">
-            <span className={cn('text-[10px] font-mono font-bold uppercase border px-1 py-0 leading-tight', agent.badge)}>
+          <div className="flex items-center gap-2 mb-1">
+            <span className={cn('text-xs font-mono font-bold uppercase border px-1.5 py-0.5 leading-tight', agent.badge)}>
               {agent.label}
             </span>
             {finding.live && (
-              <span className="text-[9px] font-mono text-text-muted uppercase border border-bg-border px-1">
+              <span className="text-[10px] font-mono text-text-muted uppercase border border-bg-border px-1.5 py-0.5">
                 live
               </span>
             )}
           </div>
-          <p className="text-xs font-mono font-semibold text-text-primary leading-snug line-clamp-2">
+          <p className="text-sm font-mono font-semibold text-text-primary leading-snug line-clamp-2">
             {finding.title}
           </p>
         </div>
-        <span className="font-mono text-[10px] text-text-muted flex-shrink-0 mt-0.5 tabular-nums">
+        <span className="font-mono text-xs text-text-muted flex-shrink-0 mt-0.5 tabular-nums">
           {formatTime(finding.timestamp)}
         </span>
         <ChevronDown
-          size={12}
+          size={14}
           className={cn('flex-shrink-0 mt-0.5 text-text-muted transition-transform', open && 'rotate-180')}
         />
       </button>
 
       {open && (
-        <div className="px-3 pb-3 border-t border-bg-border space-y-2 pt-2">
-          <p className="text-xs text-text-secondary leading-relaxed">{finding.detail}</p>
+        <div className="px-4 pb-4 border-t border-bg-border space-y-2.5 pt-2.5">
+          <p className="text-sm text-text-secondary leading-relaxed">{finding.detail}</p>
           {finding.suggestion && (
-            <div className="flex gap-2 pt-1">
-              <span className="font-mono text-[10px] text-text-muted uppercase flex-shrink-0">Fix:</span>
-              <p className="text-xs text-text-primary leading-relaxed">{finding.suggestion}</p>
+            <div className="flex gap-2.5 pt-1.5">
+              <span className="font-mono text-xs text-text-muted uppercase flex-shrink-0">Fix:</span>
+              <p className="text-sm text-text-primary leading-relaxed">{finding.suggestion}</p>
             </div>
           )}
           {finding.policy_reference && (
-            <p className="font-mono text-[10px] text-accent-red">{finding.policy_reference}</p>
+            <p className="font-mono text-xs text-accent-red">{finding.policy_reference}</p>
           )}
         </div>
       )}
@@ -163,23 +158,23 @@ function NudgeToast({ nudge, onDismiss }: NudgeToastProps) {
   return (
     <div
       className={cn(
-        'w-72 border bg-bg-base shadow-brutal animate-fade-up flex gap-2.5 p-3',
+        'w-80 border bg-bg-base shadow-brutal animate-fade-up flex gap-3 p-4',
         nudge.severity === 'critical' ? 'border-accent-red' : 'border-accent-amber',
       )}
     >
-      <div className={cn('w-1.5 flex-shrink-0 self-stretch', agent.dot)} />
+      <div className={cn('w-2 flex-shrink-0 self-stretch', agent.dot)} />
       <div className="flex-1 min-w-0">
-        <div className="flex items-center justify-between gap-2 mb-1">
-          <span className={cn('text-[10px] font-mono font-bold uppercase border px-1 py-0 leading-tight', agent.badge)}>
+        <div className="flex items-center justify-between gap-2 mb-1.5">
+          <span className={cn('text-xs font-mono font-bold uppercase border px-1.5 py-0.5 leading-tight', agent.badge)}>
             {agent.label}
           </span>
           <button onClick={() => onDismiss(nudge.id)} className="text-text-muted hover:text-accent-red transition-colors">
-            <X size={10} />
+            <X size={12} />
           </button>
         </div>
-        <p className="text-xs text-text-primary leading-snug">{nudge.message}</p>
+        <p className="text-sm text-text-primary leading-snug">{nudge.message}</p>
         {nudge.suggestion && (
-          <p className="text-[11px] text-text-muted mt-1 leading-snug">{nudge.suggestion}</p>
+          <p className="text-xs text-text-muted mt-1.5 leading-snug">{nudge.suggestion}</p>
         )}
       </div>
     </div>
@@ -192,6 +187,7 @@ function NudgeToast({ nudge, onDismiss }: NudgeToastProps) {
 
 interface Props extends UseLiveSessionReturn {
   onSessionComplete: () => void;
+  onHome?: () => void;
 }
 
 export function LiveSessionPage({
@@ -204,6 +200,7 @@ export function LiveSessionPage({
   endSession,
   dismissNudge,
   onSessionComplete,
+  onHome,
 }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const findingsFeedRef = useRef<HTMLDivElement>(null);
@@ -259,33 +256,42 @@ export function LiveSessionPage({
     <div className="h-screen bg-bg-base flex flex-col overflow-hidden">
 
       {/* ── Header ── */}
-      <header className="border-b-2 border-bg-border px-6 py-3 flex items-center justify-between flex-shrink-0 bg-bg-surface">
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2">
-            <Mic size={14} className="text-text-primary" strokeWidth={2.5} />
-            <span className="font-mono text-xs font-bold tracking-wider uppercase text-text-primary">
-              PitchPilot
+      <header className="border-b-2 border-bg-border px-8 py-4 flex items-center justify-between flex-shrink-0 bg-bg-surface">
+        <div className="flex items-center gap-5">
+          {onHome && (
+            <button
+              onClick={onHome}
+              className="flex items-center gap-1.5 px-3 py-2 font-mono text-sm border-2 border-bg-border text-text-secondary hover:bg-bg-elevated hover:text-text-primary transition-colors"
+            >
+              <ArrowLeft size={14} />
+              <span className="hidden sm:inline uppercase tracking-wider">Home</span>
+            </button>
+          )}
+          <div className="flex items-center gap-2.5">
+            <Mic size={18} className="text-text-primary" strokeWidth={2.5} />
+            <span className="font-mono text-sm font-bold tracking-wider uppercase text-text-primary">
+              P<span className="italic">itch</span><span className="ml-4">Pilot</span>
             </span>
           </div>
-          <div className="w-px h-4 bg-bg-border" />
+          <div className="w-px h-5 bg-bg-border" />
           <RecordingDot />
         </div>
 
-        <div className="flex items-center gap-6">
+        <div className="flex items-center gap-8">
           <ElapsedTimer seconds={elapsedSeconds} />
-          <div className="flex items-center gap-2 font-mono text-xs text-text-muted">
+          <div className="flex items-center gap-2.5 font-mono text-sm text-text-muted">
             <span>{findings.length} findings</span>
           </div>
           <button
             onClick={handleEndClick}
             className={cn(
-              'flex items-center gap-2 px-4 py-1.5 font-mono text-xs font-bold uppercase tracking-wider border-2 transition-all duration-150',
+              'flex items-center gap-2 px-5 py-2 font-mono text-sm font-bold uppercase tracking-wider border-2 transition-all duration-150',
               showEndConfirm
                 ? 'bg-accent-red text-white border-accent-red shadow-brutal-red'
                 : 'bg-bg-base border-bg-border text-text-secondary hover:border-accent-red hover:text-accent-red',
             )}
           >
-            <StopCircle size={12} />
+            <StopCircle size={14} />
             {showEndConfirm ? 'Confirm End' : 'End Session'}
           </button>
         </div>
@@ -307,15 +313,15 @@ export function LiveSessionPage({
               />
             ) : (
               /* Mock mode placeholder */
-              <div className="flex flex-col items-center gap-4 text-text-muted">
-                <div className="w-24 h-24 border-2 border-[#3A3A3A] flex items-center justify-center">
-                  <Radio size={36} className="text-[#3A3A3A]" />
+              <div className="flex flex-col items-center gap-5 text-text-muted">
+                <div className="w-32 h-32 border-2 border-[#3A3A3A] flex items-center justify-center">
+                  <Radio size={48} className="text-[#3A3A3A]" />
                 </div>
-                <div className="space-y-1 text-center">
-                  <p className="font-mono text-xs text-[#666] uppercase tracking-widest">
+                <div className="space-y-1.5 text-center">
+                  <p className="font-mono text-sm text-[#666] uppercase tracking-widest">
                     Demo Mode — No Camera
                   </p>
-                  <p className="font-mono text-[10px] text-[#555]">
+                  <p className="font-mono text-xs text-[#555]">
                     In production, your webcam preview appears here
                   </p>
                 </div>
@@ -328,16 +334,16 @@ export function LiveSessionPage({
 
             {/* Critical finding overlay — brief banner on the video */}
             {criticalFindings.length > 0 && (
-              <div className="absolute bottom-4 left-4 right-4">
+              <div className="absolute bottom-6 left-6 right-6">
                 {criticalFindings.map((f) => (
                   <div
                     key={f.id}
-                    className="flex items-start gap-2 border-2 border-accent-red bg-bg-base/95 px-3 py-2 shadow-brutal-red"
+                    className="flex items-start gap-2.5 border-2 border-accent-red bg-bg-base/95 px-4 py-3 shadow-brutal-red"
                   >
-                    <AlertCircle size={13} className="text-accent-red flex-shrink-0 mt-0.5" />
+                    <AlertCircle size={16} className="text-accent-red flex-shrink-0 mt-0.5" />
                     <div className="min-w-0">
-                      <p className="font-mono text-[11px] font-bold text-accent-red uppercase">Critical</p>
-                      <p className="text-xs text-text-primary leading-snug truncate">{f.title}</p>
+                      <p className="font-mono text-xs font-bold text-accent-red uppercase">Critical</p>
+                      <p className="text-sm text-text-primary leading-snug truncate">{f.title}</p>
                     </div>
                   </div>
                 ))}
@@ -346,14 +352,14 @@ export function LiveSessionPage({
           </div>
 
           {/* Transcript ticker */}
-          <div className="border-t-2 border-bg-border bg-bg-surface px-4 py-2 flex-shrink-0 min-h-[52px]">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="font-mono text-[9px] text-text-muted uppercase tracking-widest">Transcript</span>
-              <span className="w-1 h-1 rounded-full bg-accent-red animate-pulse" />
+          <div className="border-t-2 border-bg-border bg-bg-surface px-5 py-3 flex-shrink-0 min-h-[64px]">
+            <div className="flex items-center gap-2.5 mb-1.5">
+              <span className="font-mono text-xs text-text-muted uppercase tracking-widest">Transcript</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-accent-red animate-pulse" />
             </div>
-            <div className="space-y-0.5 overflow-hidden max-h-[40px]">
+            <div className="space-y-1 overflow-hidden max-h-[48px]">
               {recentTranscript.length === 0 ? (
-                <p className="font-mono text-xs text-text-muted italic">
+                <p className="font-mono text-sm text-text-muted italic">
                   Waiting for speech<span className="animate-blink">_</span>
                 </p>
               ) : (
@@ -361,7 +367,7 @@ export function LiveSessionPage({
                   <p
                     key={`${seg.start_time}-${i}`}
                     className={cn(
-                      'font-mono text-xs leading-snug truncate',
+                      'font-mono text-sm leading-snug truncate',
                       i === recentTranscript.length - 1
                         ? 'text-text-primary'
                         : 'text-text-muted',
@@ -376,20 +382,20 @@ export function LiveSessionPage({
         </div>
 
         {/* Right: Live findings feed */}
-        <div className="w-80 flex flex-col overflow-hidden flex-shrink-0 bg-bg-base">
-          <div className="border-b-2 border-bg-border px-4 py-2.5 flex-shrink-0 flex items-center justify-between bg-bg-surface">
-            <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-text-secondary">
+        <div className="w-96 flex flex-col overflow-hidden flex-shrink-0 bg-bg-base">
+          <div className="border-b-2 border-bg-border px-5 py-3 flex-shrink-0 flex items-center justify-between bg-bg-surface">
+            <span className="font-mono text-xs font-bold uppercase tracking-widest text-text-secondary">
               Agent Findings
             </span>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-4">
               {(['coach', 'compliance', 'persona'] as const).map((agent) => {
                 const count = findings.filter((f) => f.agent === agent).length;
                 if (count === 0) return null;
                 const s = AGENT_STYLES[agent];
                 return (
-                  <div key={agent} className="flex items-center gap-1">
-                    <span className={cn('w-1.5 h-1.5 rounded-full', s.dot)} />
-                    <span className="font-mono text-[10px] text-text-muted">{count}</span>
+                  <div key={agent} className="flex items-center gap-1.5">
+                    <span className={cn('w-2 h-2 rounded-full', s.dot)} />
+                    <span className="font-mono text-xs text-text-muted">{count}</span>
                   </div>
                 );
               })}
@@ -401,11 +407,11 @@ export function LiveSessionPage({
             className="flex-1 overflow-y-auto divide-y-2 divide-bg-border"
           >
             {findings.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full gap-3 p-6 text-center">
-                <div className="w-10 h-10 border-2 border-bg-border flex items-center justify-center">
-                  <Radio size={18} className="text-text-muted" />
+              <div className="flex flex-col items-center justify-center h-full gap-4 p-8 text-center">
+                <div className="w-14 h-14 border-2 border-bg-border flex items-center justify-center">
+                  <Radio size={24} className="text-text-muted" />
                 </div>
-                <p className="font-mono text-xs text-text-muted leading-relaxed">
+                <p className="font-mono text-sm text-text-muted leading-relaxed">
                   Listening for claims…<br />
                   Findings will appear here as you speak.
                 </p>
@@ -423,9 +429,9 @@ export function LiveSessionPage({
 
           {/* Finalizing state indicator */}
           {state === 'finalizing' && (
-            <div className="border-t-2 border-bg-border px-4 py-3 bg-bg-surface flex items-center gap-2">
-              <div className="w-2 h-2 bg-accent-red animate-pulse flex-shrink-0" />
-              <p className="font-mono text-xs text-text-secondary">Building readiness report…</p>
+            <div className="border-t-2 border-bg-border px-5 py-4 bg-bg-surface flex items-center gap-2.5">
+              <div className="w-2.5 h-2.5 bg-accent-red animate-pulse flex-shrink-0" />
+              <p className="font-mono text-sm text-text-secondary">Building readiness report…</p>
             </div>
           )}
         </div>
@@ -433,7 +439,7 @@ export function LiveSessionPage({
 
       {/* ── Nudge toasts (bottom-right) ── */}
       {nudges.length > 0 && (
-        <div className="fixed bottom-6 right-6 flex flex-col gap-2 z-50 pointer-events-none">
+        <div className="fixed bottom-8 right-8 flex flex-col gap-3 z-50 pointer-events-none">
           {nudges.slice(0, 3).map((nudge) => (
             <div key={nudge.id} className="pointer-events-auto">
               <NudgeToast nudge={nudge} onDismiss={dismissNudge} />

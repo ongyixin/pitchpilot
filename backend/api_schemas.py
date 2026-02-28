@@ -137,6 +137,12 @@ class ReadinessReport(BaseModel):
     claims: List[Claim]
     summary: str
     created_at: str
+    # Live session provenance — None for review/upload mode
+    session_mode: Optional[SessionMode] = None
+    session_duration_seconds: Optional[float] = None
+    live_cues_count: Optional[int] = None
+    # Narrative post-hoc account of what happened during the live session
+    live_session_summary: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -150,6 +156,7 @@ class Session(BaseModel):
     id: UUID
     video_filename: str
     policy_filenames: List[str] = []
+    presentation_filenames: List[str] = []
     personas: List[str] = []
     mode: SessionMode = SessionMode.UPLOAD
     status: SessionStatus = SessionStatus.PENDING
@@ -159,6 +166,8 @@ class Session(BaseModel):
     report: Optional[ReadinessReport] = None
     timeline: List[TimelineAnnotation] = []
     live_findings: List[Finding] = []
+    live_cues: List[EarpieceCue] = []
+    session_duration_seconds: Optional[float] = None
     created_at: str
 
 

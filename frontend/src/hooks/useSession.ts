@@ -1,17 +1,20 @@
 import { useState, useCallback, useRef } from 'react';
 import { api } from '@/lib/api';
-import { MOCK_STATUS_SEQUENCE, MOCK_REPORT } from '@/lib/mock-data';
-import type { StatusResponse, ReadinessReport, PersonaConfig } from '@/types/api';
+import { MOCK_STATUS_SEQUENCE, MOCK_REPORT, MOCK_TIMELINE } from '@/lib/mock-data';
+import type { SessionStatusResponse, ReadinessReport, TimelineAnnotation } from '@/types';
+import type { PersonaConfig } from '@/types/api';
 
 export type AppView = 'setup' | 'analyzing' | 'results';
 
-const USE_MOCK = true; // flip to false once backend is wired
+// Read from Vite env var; defaults to true (safe for development without Ollama)
+const USE_MOCK = import.meta.env.VITE_USE_MOCK !== 'false';
 
 export function useSession() {
   const [view, setView] = useState<AppView>('setup');
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [status, setStatus] = useState<StatusResponse | null>(null);
+  const [status, setStatus] = useState<SessionStatusResponse | null>(null);
   const [report, setReport] = useState<ReadinessReport | null>(null);
+  const [timeline, setTimeline] = useState<TimelineAnnotation[]>([]);
   const [error, setError] = useState<string | null>(null);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const mockStepRef = useRef(0);
@@ -28,37 +31,48 @@ export function useSession() {
     pollingRef.current = setInterval(() => {
       const step = MOCK_STATUS_SEQUENCE[mockStepRef.current];
       if (!step) return;
-      setStatus(step);
+      setStatus(step as unknown as SessionStatusResponse);
       mockStepRef.current++;
       if (step.status === 'complete') {
         stopPolling();
-        setReport(MOCK_REPORT);
+        setReport(MOCK_REPORT as unknown as ReadinessReport);
+        setTimeline((MOCK_TIMELINE ?? []) as unknown as TimelineAnnotation[]);
         setTimeout(() => setView('results'), 600);
-      } else if (step.status === 'error') {
+      } else if (step.status === 'error' || step.status === 'failed') {
         stopPolling();
-        setError(step.error ?? 'Analysis failed.');
+        setError((step as unknown as Record<string, string>).error ?? 'Analysis failed.');
       }
     }, 900);
   }, [stopPolling]);
 
   const startRealPolling = useCallback(
     (id: string) => {
+      let consecutiveErrors = 0;
       pollingRef.current = setInterval(async () => {
         try {
           const s = await api.getStatus(id);
           setStatus(s);
+          consecutiveErrors = 0;
           if (s.status === 'complete') {
             stopPolling();
-            const r = await api.getReport(id);
+            const [r, t] = await Promise.all([
+              api.getReport(id),
+              api.getTimeline(id).catch(() => ({ session_id: id, annotations: [] })),
+            ]);
             setReport(r);
+            setTimeline(t.annotations);
             setTimeout(() => setView('results'), 600);
-          } else if (s.status === 'error') {
+          } else if (s.status === 'failed') {
             stopPolling();
-            setError(s.error ?? 'Analysis failed.');
+            setError(s.error_message ?? 'Analysis failed.');
           }
         } catch (err) {
-          stopPolling();
-          setError(err instanceof Error ? err.message : 'Polling failed.');
+          // Retry up to 3 consecutive network errors before giving up
+          consecutiveErrors++;
+          if (consecutiveErrors >= 3) {
+            stopPolling();
+            setError(err instanceof Error ? err.message : 'Polling failed — is the backend running?');
+          }
         }
       }, 2000);
     },
@@ -66,7 +80,7 @@ export function useSession() {
   );
 
   const startAnalysis = useCallback(
-    async (video: File, docs: File[], personas: PersonaConfig[]) => {
+    async (video: File, docs: File[], personas: PersonaConfig[], presentationMaterials: File[] = []) => {
       setError(null);
       setView('analyzing');
 
@@ -79,11 +93,36 @@ export function useSession() {
       }
 
       try {
-        const { session_id } = await api.startSession(video, docs, enabledPersonas);
+        const { session_id } = await api.startSession(video, docs, enabledPersonas, presentationMaterials);
         setSessionId(session_id);
         startRealPolling(session_id);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to start session.');
+        setView('setup');
+      }
+    },
+    [startMockPolling, startRealPolling],
+  );
+
+  const startDemo = useCallback(
+    async (personas: PersonaConfig[]) => {
+      setError(null);
+      setView('analyzing');
+
+      const enabledPersonas = personas.filter((p) => p.enabled).map((p) => p.id);
+
+      if (USE_MOCK) {
+        setSessionId('demo-001');
+        startMockPolling();
+        return;
+      }
+
+      try {
+        const { session_id } = await api.startDemoSession(enabledPersonas);
+        setSessionId(session_id);
+        startRealPolling(session_id);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to start demo session.');
         setView('setup');
       }
     },
@@ -96,9 +135,10 @@ export function useSession() {
     setSessionId(null);
     setStatus(null);
     setReport(null);
+    setTimeline([]);
     setError(null);
     mockStepRef.current = 0;
   }, [stopPolling]);
 
-  return { view, sessionId, status, report, error, startAnalysis, reset };
+  return { view, sessionId, status, report, timeline, error, startAnalysis, startDemo, reset };
 }

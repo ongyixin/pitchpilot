@@ -23,6 +23,7 @@ Always respond with a valid JSON object in this exact structure:
       "title": "Short title (max 10 words)",
       "description": "Specific observation about what was said or shown.",
       "suggestion": "Concrete action the presenter should take.",
+      "cue_hint": "3-6 word phrase for earpiece delivery, e.g. 'slow down', 'define problem first', 'clarify differentiation'",
       "timestamp_hint": null
     }
   ],

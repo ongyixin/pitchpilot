@@ -30,6 +30,7 @@ Always respond with a valid JSON object in this exact structure:
       "description": "Quote the problematic claim and explain the conflict.",
       "policy_ref": "Quote the relevant policy clause that is violated or relevant.",
       "suggestion": "Suggested safe rewording or fix.",
+      "cue_hint": "3-6 word phrase summarizing the risk for earpiece delivery, e.g. 'compliance risk', 'mention privacy', 'needs disclaimer'",
       "timestamp_hint": null
     }
   ],

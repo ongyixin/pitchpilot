@@ -6,8 +6,11 @@ import { SetupPage } from '@/pages/SetupPage';
 import { AnalyzingPage } from '@/pages/AnalyzingPage';
 import { ResultsPage } from '@/pages/ResultsPage';
 import { LiveSessionPage } from '@/pages/LiveSessionPage';
+import { InRoomModePage } from '@/pages/InRoomModePage';
+import { RemoteModePage } from '@/pages/RemoteModePage';
 import type { PersonaConfig } from '@/types/api';
 import type { SessionMode } from '@/types';
+import { isLiveMode } from '@/types';
 
 const DEMO_PERSONAS: PersonaConfig[] = [
   {
@@ -27,49 +30,67 @@ const DEMO_PERSONAS: PersonaConfig[] = [
 ];
 
 export default function App() {
-  const { view, sessionId, status, report, error, startAnalysis, reset } = useSession();
+  const { view, sessionId, status, report, timeline, error, startAnalysis, startDemo, reset } = useSession();
   const liveSession = useLiveSession();
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [appMode, setAppMode] = useState<SessionMode>('upload');
   const [showLanding, setShowLanding] = useState(true);
+  const [initialSetupMode, setInitialSetupMode] = useState<'review' | 'live_in_room' | 'live_remote'>('review');
 
-  const handleStart = (video: File, docs: File[], personas: PersonaConfig[], mode: SessionMode = 'upload') => {
+  const handleStart = (video: File, docs: File[], personas: PersonaConfig[], mode: SessionMode = 'review', presentationMaterials: File[] = []) => {
     setAppMode(mode);
-    if (mode === 'live') {
+    if (isLiveMode(mode)) {
       setVideoFile(null);
-      liveSession.startSession(personas, docs);
+      liveSession.startSession(personas, docs, mode, presentationMaterials);
     } else {
       setVideoFile(video);
-      startAnalysis(video, docs, personas);
+      startAnalysis(video, docs, personas, presentationMaterials);
     }
   };
 
   const handleReset = () => {
-    if (appMode === 'live') {
+    if (isLiveMode(appMode)) {
       liveSession.reset();
     }
     reset();
-    setAppMode('upload');
+    setAppMode('review');
+    setInitialSetupMode('review');
     setShowLanding(true);
   };
 
-  const handleLaunch = () => setShowLanding(false);
+  const handleBackToSetup = () => {
+    if (isLiveMode(appMode)) {
+      liveSession.reset();
+    }
+    reset();
+    setAppMode('review');
+    setInitialSetupMode('review');
+    setShowLanding(false); // Go to SetupPage, not LandingPage
+  };
+
+  const handleLaunch = () => {
+    setInitialSetupMode('review');
+    setShowLanding(false);
+  };
+
+  const handleGoLive = () => {
+    setInitialSetupMode('live_in_room');
+    setShowLanding(false);
+  };
 
   const handleLandingDemo = () => {
     setShowLanding(false);
-    const demoFile = new File([''], 'demo_pitch.mp4', { type: 'video/mp4' });
-    setVideoFile(demoFile);
-    startAnalysis(demoFile, [], DEMO_PERSONAS);
+    startDemo(DEMO_PERSONAS);
   };
 
   // ── Landing page ──
   if (showLanding) {
-    return <LandingPage onLaunch={handleLaunch} onDemo={handleLandingDemo} />;
+    return <LandingPage onLaunch={handleLaunch} onDemo={handleLandingDemo} onGoLive={handleGoLive} />;
   }
 
   // ── Error state ──
-  const activeError = appMode === 'live' ? liveSession.error : error;
-  if (activeError && appMode !== 'live') {
+  const activeError = isLiveMode(appMode) ? liveSession.error : error;
+  if (activeError && !isLiveMode(appMode)) {
     return (
       <div className="min-h-screen bg-bg-base flex items-center justify-center">
         <div className="text-center space-y-4 border-2 border-accent-red p-8 shadow-brutal-red">
@@ -86,19 +107,31 @@ export default function App() {
     );
   }
 
-  // ── Live mode routing ──
-  if (appMode === 'live') {
+  // ── Live mode routing (all live_* modes) ──
+  if (isLiveMode(appMode)) {
     const liveState = liveSession.state;
 
+    // Starting / connecting
     if (liveState === 'idle' || liveState === 'requesting_permissions' || liveState === 'connecting') {
-      // Still starting — show a brief connecting overlay
+      const isInRoom = appMode === 'live_in_room';
       return (
-        <div className="min-h-screen bg-bg-base flex items-center justify-center">
-          <div className="flex flex-col items-center gap-4 border-2 border-bg-border p-10 shadow-brutal">
-            <div className="w-3 h-3 bg-accent-red animate-pulse" />
-            <p className="font-mono text-xs text-text-secondary uppercase tracking-widest">
+        <div
+          className="min-h-screen flex items-center justify-center"
+          style={isInRoom ? { background: '#050508' } : undefined}
+        >
+          <div
+            className={isInRoom ? 'flex flex-col items-center gap-4 p-10' : 'flex flex-col items-center gap-4 border-2 border-bg-border p-10 shadow-brutal bg-bg-base'}
+          >
+            <div
+              className="w-3 h-3 rounded-full animate-pulse"
+              style={isInRoom ? { background: '#ef4444' } : undefined}
+            />
+            <p
+              className="font-mono text-xs uppercase tracking-widest"
+              style={isInRoom ? { color: '#555' } : undefined}
+            >
               {liveState === 'requesting_permissions'
-                ? 'Requesting camera & microphone…'
+                ? (appMode === 'live_in_room' ? 'Requesting microphone…' : 'Requesting camera & microphone…')
                 : 'Connecting to live session…'}
             </p>
           </div>
@@ -106,6 +139,7 @@ export default function App() {
       );
     }
 
+    // Error
     if (liveState === 'error') {
       return (
         <div className="min-h-screen bg-bg-base flex items-center justify-center">
@@ -123,17 +157,37 @@ export default function App() {
       );
     }
 
-    if ((liveState === 'live' || liveState === 'finalizing') && liveSession.state !== 'complete') {
+    // Active session — route to the mode-specific page
+    if (liveState === 'live' || liveState === 'finalizing') {
+      if (appMode === 'live_in_room') {
+        return (
+          <InRoomModePage
+            {...liveSession}
+            onSessionComplete={() => { /* handled via useEffect inside InRoomModePage */ }}
+            onHome={handleBackToSetup}
+          />
+        );
+      }
+      if (appMode === 'live_remote') {
+        return (
+          <RemoteModePage
+            {...liveSession}
+            onSessionComplete={() => { /* handled via useEffect inside RemoteModePage */ }}
+            onHome={handleBackToSetup}
+          />
+        );
+      }
+      // Legacy 'live' mode → existing LiveSessionPage
       return (
         <LiveSessionPage
           {...liveSession}
-          onSessionComplete={() => {
-            // Transition happens inside LiveSessionPage via the useEffect
-          }}
+          onSessionComplete={() => { /* handled via useEffect inside LiveSessionPage */ }}
+          onHome={handleBackToSetup}
         />
       );
     }
 
+    // Session complete → results
     if (liveState === 'complete' && liveSession.report) {
       return (
         <ResultsPage
@@ -146,9 +200,16 @@ export default function App() {
     }
   }
 
-  // ── Upload mode routing ──
+  const handleHome = () => {
+    reset();
+    setAppMode('review');
+    setInitialSetupMode('review');
+    setShowLanding(true);
+  };
+
+  // ── Review / upload mode routing ──
   if (view === 'setup') {
-    return <SetupPage onStart={handleStart} />;
+    return <SetupPage onStart={handleStart} onStartDemo={startDemo} onHome={handleHome} initialMode={initialSetupMode} />;
   }
 
   if (view === 'analyzing') {
@@ -161,10 +222,11 @@ export default function App() {
         report={report}
         sessionId={sessionId ?? 'unknown'}
         videoFile={videoFile ?? undefined}
+        timeline={timeline}
         onReset={handleReset}
       />
     );
   }
 
-  return <SetupPage onStart={handleStart} />;
+  return <SetupPage onStart={handleStart} onStartDemo={startDemo} onHome={handleHome} initialMode={initialSetupMode} />;
 }

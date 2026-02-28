@@ -1,10 +1,3 @@
-/**
- * ReadinessScore — Editorial big-number display + dimension breakdown.
- *
- * Brutalist redesign: no SVG arc gauge — instead a giant Bebas Neue score
- * number, a letter grade, and horizontal bar meters for each dimension.
- */
-
 import { cn } from '@/lib/utils';
 import type { ReadinessReport } from '@/types/api';
 
@@ -12,18 +5,21 @@ interface Props {
   report: ReadinessReport;
 }
 
-const DIMENSION_ORDER = ['clarity', 'compliance', 'defensibility', 'persuasiveness'];
+function computeGrade(overall: number): string {
+  if (overall >= 90) return 'A';
+  if (overall >= 80) return 'B';
+  if (overall >= 70) return 'C';
+  if (overall >= 60) return 'D';
+  return 'F';
+}
 
 export function ReadinessScore({ report }: Props) {
-  const { overall_score, grade, dimensions } = report;
+  const { overall, dimensions } = report.score;
+  const grade = computeGrade(overall);
 
   const scoreColor =
-    overall_score >= 80 ? 'text-text-primary' :
-    overall_score >= 60 ? 'text-accent-amber' : 'text-accent-red';
-
-  const dimList = DIMENSION_ORDER
-    .map((key) => dimensions[key])
-    .filter(Boolean);
+    overall >= 80 ? 'text-text-primary' :
+    overall >= 60 ? 'text-accent-amber' : 'text-accent-red';
 
   return (
     <div className="bg-bg-surface border-2 border-bg-border">
@@ -43,42 +39,39 @@ export function ReadinessScore({ report }: Props) {
         {/* Hero score */}
         <div className="flex items-end gap-3 mb-4 pb-4 border-b-2 border-bg-border">
           <span className={cn('font-display leading-none', scoreColor, 'text-[80px]')}>
-            {overall_score}
+            {overall}
           </span>
           <span className="font-mono text-sm text-text-muted pb-3">/100</span>
         </div>
 
         {/* Dimension bars */}
         <div className="space-y-3">
-          {dimList.map((dim) => {
+          {dimensions.map((dim) => {
             const barColor =
               dim.score >= 80 ? 'bg-text-primary' :
               dim.score >= 60 ? 'bg-accent-amber' : 'bg-accent-red';
 
             return (
-              <div key={dim.name}>
+              <div key={dim.dimension}>
                 <div className="flex items-center justify-between mb-1">
                   <span className="font-mono text-xs text-text-secondary uppercase tracking-wider">
-                    {dim.name}
+                    {dim.dimension}
                   </span>
-                  <div className="flex items-center gap-3">
-                    {dim.issues_count > 0 && (
-                      <span className="font-mono text-xs text-text-muted">
-                        {dim.issues_count} issues
-                      </span>
-                    )}
-                    <span className="font-display text-lg text-text-primary leading-none">
-                      {dim.score}
-                    </span>
-                  </div>
+                  <span className="font-display text-lg text-text-primary leading-none">
+                    {dim.score}
+                  </span>
                 </div>
-                {/* Track — square, thick border */}
                 <div className="h-3 bg-bg-base border-2 border-bg-border overflow-hidden">
                   <div
                     className={cn('h-full transition-all duration-700', barColor)}
                     style={{ width: `${dim.score}%` }}
                   />
                 </div>
+                {dim.rationale && (
+                  <p className="font-mono text-xs text-text-muted mt-0.5 leading-snug">
+                    {dim.rationale}
+                  </p>
+                )}
               </div>
             );
           })}
