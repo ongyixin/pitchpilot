@@ -6,7 +6,7 @@
   "live_session_summary": "5:22 live in-room session. 6 earpiece cues delivered in real time. Two critical issues surfaced: the 'fully automated' compliance conflict and the unanchored 3× speed claim. The on-device differentiator was underemphasised — repeat it earlier and at close. All findings below include both the issues that triggered live cues and the deferred items that surface here for the first time.",
   "video_filename": null,
   "policy_filenames": ["enterprise_data_policy.pdf", "approved_messaging_guide.pdf"],
-  "personas": ["Skeptical Investor", "Technical Reviewer", "Compliance Officer"],
+  "personas": ["Skeptical Investor", "Technical Reviewer", "Procurement Manager"],
   "status": "complete",
   "progress": 100,
   "progress_message": "Live session report complete",
@@ -159,13 +159,13 @@
       "id": "lf-009",
       "agent": "persona",
       "severity": "warning",
-      "title": "Compliance Officer: data retention policy not mentioned",
-      "detail": "No mention of how long rehearsal recordings are retained locally. A compliance officer in the room would flag this immediately.",
-      "suggestion": "Add one sentence on local-only storage and auto-deletion policy.",
+      "title": "Procurement Manager: TCO and integration path not addressed",
+      "detail": "No mention of three-year total cost or CRM integrations. A Procurement Manager in the room will not approve without this.",
+      "suggestion": "Add a slide covering per-seat pricing, implementation timeline, and Salesforce/Gong integrations.",
       "timestamp": 240.0,
       "claim_id": null,
       "policy_reference": null,
-      "persona": "Compliance Officer",
+      "persona": "Procurement Manager",
       "live": true,
       "cue_hint": null
     }
@@ -188,15 +188,15 @@
     },
     {
       "id": "lq-003",
-      "persona": "Compliance Officer",
-      "question": "You said 'no data leaves the device' — does that apply even when the optional cloud sync is enabled?",
+      "persona": "Procurement Manager",
+      "question": "What's the all-in cost over three years — licences, implementation, training, and support?",
       "timestamp": 112.0,
       "difficulty": "critical"
     },
     {
       "id": "lq-004",
-      "persona": "Compliance Officer",
-      "question": "How long are live session recordings retained on the device, and is there an auto-delete policy?",
+      "persona": "Procurement Manager",
+      "question": "How does this integrate with our existing CRM and sales enablement stack — Salesforce, Gong, Highspot?",
       "timestamp": 240.0,
       "difficulty": "warning"
     },

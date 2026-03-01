@@ -1,8 +1,29 @@
 import { useState, useRef, useCallback } from 'react';
-import { Upload, FileVideo, FileText, X, TrendingUp, User, Shield, Zap, Radio, Headphones, Monitor, Layers } from 'lucide-react';
+import { Upload, FileVideo, FileText, X, TrendingUp, User, Briefcase, Zap, Radio, Headphones, Monitor, Layers, Mic, CheckSquare, Users } from 'lucide-react';
 import { cn, formatFileSize } from '@/lib/utils';
-import type { PersonaConfig } from '@/types/api';
+import type { AgentConfig, PersonaConfig } from '@/types/api';
 import type { SessionMode } from '@/types';
+
+const DEFAULT_AGENTS: AgentConfig[] = [
+  {
+    id: 'coach',
+    label: 'Presentation Coach',
+    description: 'Evaluates clarity, structure, pacing, and delivery',
+    enabled: true,
+  },
+  {
+    id: 'compliance',
+    label: 'Compliance Checker',
+    description: 'Cross-checks claims against uploaded policy documents',
+    enabled: true,
+  },
+  {
+    id: 'persona',
+    label: 'Persona Simulator',
+    description: 'Simulates audience reactions and likely objections',
+    enabled: true,
+  },
+];
 
 const DEFAULT_PERSONAS: PersonaConfig[] = [
   {
@@ -20,10 +41,10 @@ const DEFAULT_PERSONAS: PersonaConfig[] = [
     enabled: true,
   },
   {
-    id: 'compliance_officer',
-    label: 'Compliance Officer',
-    description: 'Flags regulatory risk and policy conflicts',
-    icon: 'Shield',
+    id: 'procurement_manager',
+    label: 'Procurement Manager',
+    description: 'Probes TCO, ROI, contract terms, and integration fit',
+    icon: 'Briefcase',
     enabled: false,
   },
 ];
@@ -31,7 +52,7 @@ const DEFAULT_PERSONAS: PersonaConfig[] = [
 const PERSONA_ICONS = {
   TrendingUp: TrendingUp,
   User: User,
-  Shield: Shield,
+  Briefcase: Briefcase,
 };
 
 // ---------------------------------------------------------------------------
@@ -41,7 +62,7 @@ const PERSONA_ICONS = {
 type PickMode = 'review' | 'live_in_room' | 'live_remote';
 
 interface Props {
-  onStart: (video: File, docs: File[], personas: PersonaConfig[], mode?: SessionMode, presentationMaterials?: File[]) => void;
+  onStart: (video: File, docs: File[], personas: PersonaConfig[], mode?: SessionMode, presentationMaterials?: File[], agents?: AgentConfig[]) => void;
   onStartDemo: (personas: PersonaConfig[]) => void;
   onHome?: () => void;
   initialMode?: PickMode;
@@ -86,6 +107,7 @@ export function SetupPage({ onStart, onStartDemo, onHome, initialMode }: Props) 
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [docFiles, setDocFiles] = useState<File[]>([]);
   const [presentationFiles, setPresentationFiles] = useState<File[]>([]);
+  const [agents, setAgents] = useState<AgentConfig[]>(DEFAULT_AGENTS);
   const [personas, setPersonas] = useState<PersonaConfig[]>(DEFAULT_PERSONAS);
   const [videoDrag, setVideoDrag] = useState(false);
   const [docDrag, setDocDrag] = useState(false);
@@ -127,14 +149,28 @@ export function SetupPage({ onStart, onStartDemo, onHome, initialMode }: Props) 
     setPresentationFiles((prev) => [...prev, ...files]);
   }, []);
 
+  const toggleAgent = (id: string) => {
+    setAgents((prev) => {
+      const updated = prev.map((a) => (a.id === id ? { ...a, enabled: !a.enabled } : a));
+      // If Persona Agent is being disabled, also disable all personas
+      if (id === 'persona') {
+        const personaAgent = updated.find((a) => a.id === 'persona');
+        if (!personaAgent?.enabled) {
+          setPersonas((prevPersonas) => prevPersonas.map((p) => ({ ...p, enabled: false })));
+        }
+      }
+      return updated;
+    });
+  };
+
   const togglePersona = (id: string) => {
     setPersonas((prev) =>
       prev.map((p) => (p.id === id ? { ...p, enabled: !p.enabled } : p)),
     );
   };
 
-  const canStart = !!videoFile && personas.some((p) => p.enabled);
-  const canStartLive = personas.some((p) => p.enabled);
+  const canStart = !!videoFile && agents.some((a) => a.enabled);
+  const canStartLive = agents.some((a) => a.enabled);
 
   return (
     <div className="min-h-screen bg-bg-base flex flex-col">
@@ -431,26 +467,26 @@ export function SetupPage({ onStart, onStartDemo, onHome, initialMode }: Props) 
             </div>
           </section>
 
-          {/* ── AUDIENCE PERSONAS ── */}
+          {/* ── AGENTS ── */}
           <section
             className="animate-fade-up"
-            style={{ animationDelay: '180ms' }}
+            style={{ animationDelay: '150ms' }}
           >
             <div className="flex items-center gap-3 mb-1">
-              <span className="font-display text-2xl text-text-primary tracking-wider">AUDIENCE PERSONAS</span>
+              <span className="font-display text-2xl text-text-primary tracking-wider">AGENTS</span>
             </div>
             <div className="border-b-2 border-bg-border mb-3" />
 
             <div className="grid grid-cols-3 gap-3">
-              {personas.map((persona) => {
-                const Icon = PERSONA_ICONS[persona.icon as keyof typeof PERSONA_ICONS] ?? User;
+              {agents.map((agent) => {
+                const Icon = agent.id === 'coach' ? Mic : agent.id === 'compliance' ? CheckSquare : Users;
                 return (
-                  <div key={persona.id} className="relative group">
+                  <div key={agent.id} className="relative group">
                     <button
-                      onClick={() => togglePersona(persona.id)}
+                      onClick={() => toggleAgent(agent.id)}
                       className={cn(
                         'w-full text-left pl-5 pr-3 py-3 border-2 border-bg-border transition-all duration-100',
-                        persona.enabled
+                        agent.enabled
                           ? 'bg-bg-border text-bg-base shadow-brutal translate-x-[-2px] translate-y-[-2px]'
                           : 'bg-bg-surface hover:bg-bg-elevated',
                       )}
@@ -458,13 +494,13 @@ export function SetupPage({ onStart, onStartDemo, onHome, initialMode }: Props) 
                       <div className="flex items-center gap-4">
                         <Icon
                           size={28}
-                          className={persona.enabled ? 'text-bg-base' : 'text-text-muted'}
+                          className={agent.enabled ? 'text-bg-base' : 'text-text-muted'}
                         />
                         <span className={cn(
                           'font-display text-2xl tracking-wider uppercase text-justify',
-                          persona.enabled ? 'text-bg-base' : 'text-text-secondary',
+                          agent.enabled ? 'text-bg-base' : 'text-text-secondary',
                         )}>
-                          {persona.label}
+                          {agent.label}
                         </span>
                       </div>
                     </button>
@@ -472,7 +508,7 @@ export function SetupPage({ onStart, onStartDemo, onHome, initialMode }: Props) 
                     <div className="pointer-events-none absolute bottom-full left-0 mb-2 w-48 z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
                       <div className="border-2 border-bg-border bg-bg-base px-2.5 py-2 shadow-brutal">
                         <p className="font-mono text-sm leading-snug text-text-secondary">
-                          {persona.description}
+                          {agent.description}
                         </p>
                       </div>
                       <div className="w-2 h-2 border-r-2 border-b-2 border-bg-border bg-bg-base rotate-45 ml-3 -mt-1" />
@@ -483,6 +519,60 @@ export function SetupPage({ onStart, onStartDemo, onHome, initialMode }: Props) 
             </div>
           </section>
 
+          {/* ── AUDIENCE PERSONAS ── */}
+          {agents.find((a) => a.id === 'persona')?.enabled && (
+            <section
+              className="animate-fade-up"
+              style={{ animationDelay: '180ms' }}
+            >
+              <div className="flex items-center gap-3 mb-1">
+                <span className="font-display text-2xl text-text-primary tracking-wider">AUDIENCE PERSONAS</span>
+              </div>
+              <div className="border-b-2 border-bg-border mb-3" />
+
+              <div className="grid grid-cols-3 gap-3">
+                {personas.map((persona) => {
+                  const Icon = PERSONA_ICONS[persona.icon as keyof typeof PERSONA_ICONS] ?? User;
+                  return (
+                    <div key={persona.id} className="relative group">
+                      <button
+                        onClick={() => togglePersona(persona.id)}
+                        className={cn(
+                          'w-full text-left pl-5 pr-3 py-3 border-2 border-bg-border transition-all duration-100',
+                          persona.enabled
+                            ? 'bg-bg-border text-bg-base shadow-brutal translate-x-[-2px] translate-y-[-2px]'
+                            : 'bg-bg-surface hover:bg-bg-elevated',
+                        )}
+                      >
+                        <div className="flex items-center gap-4">
+                          <Icon
+                            size={28}
+                            className={persona.enabled ? 'text-bg-base' : 'text-text-muted'}
+                          />
+                          <span className={cn(
+                            'font-display text-2xl tracking-wider uppercase text-justify',
+                            persona.enabled ? 'text-bg-base' : 'text-text-secondary',
+                          )}>
+                            {persona.label}
+                          </span>
+                        </div>
+                      </button>
+                      {/* Hover tooltip */}
+                      <div className="pointer-events-none absolute bottom-full left-0 mb-2 w-48 z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                        <div className="border-2 border-bg-border bg-bg-base px-2.5 py-2 shadow-brutal">
+                          <p className="font-mono text-sm leading-snug text-text-secondary">
+                            {persona.description}
+                          </p>
+                        </div>
+                        <div className="w-2 h-2 border-r-2 border-b-2 border-bg-border bg-bg-base rotate-45 ml-3 -mt-1" />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+
           {/* ── LAUNCH ── */}
           <div
             className="animate-fade-up pt-2 space-y-3"
@@ -492,7 +582,7 @@ export function SetupPage({ onStart, onStartDemo, onHome, initialMode }: Props) 
             {selectedMode === 'review' ? (
               <>
                 <button
-                  onClick={() => videoFile && onStart(videoFile, docFiles, personas, 'review', presentationFiles)}
+                  onClick={() => videoFile && onStart(videoFile, docFiles, personas, 'review', presentationFiles, agents)}
                   disabled={!canStart}
                   className={cn(
                     'w-full py-4 font-display text-3xl tracking-wider flex items-center justify-center gap-3 border-2 border-bg-border transition-all duration-100',
@@ -513,7 +603,7 @@ export function SetupPage({ onStart, onStartDemo, onHome, initialMode }: Props) 
                 <button
                   onClick={() => {
                     const placeholder = new File([''], 'live_in_room.mp4', { type: 'video/mp4' });
-                    onStart(placeholder, docFiles, personas, 'live_in_room', presentationFiles);
+                    onStart(placeholder, docFiles, personas, 'live_in_room', presentationFiles, agents);
                   }}
                   disabled={!canStartLive}
                   className={cn(
@@ -535,7 +625,7 @@ export function SetupPage({ onStart, onStartDemo, onHome, initialMode }: Props) 
                 <button
                   onClick={() => {
                     const placeholder = new File([''], 'live_remote.mp4', { type: 'video/mp4' });
-                    onStart(placeholder, docFiles, personas, 'live_remote', presentationFiles);
+                    onStart(placeholder, docFiles, personas, 'live_remote', presentationFiles, agents);
                   }}
                   disabled={!canStartLive}
                   className={cn(

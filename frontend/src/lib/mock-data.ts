@@ -131,9 +131,9 @@ export const MOCK_REPORT: ReadinessReport = {
       follow_up: 'M2 MacBook Pro: 87s for a 5-min video. M1: ~2min. Windows with CUDA: ~45s.',
     },
     {
-      id: 'q-004', persona: 'Compliance Officer', difficulty: 'critical',
-      question: 'How do you ensure the AI\'s compliance assessments are not themselves a compliance liability?',
-      follow_up: 'The tool surfaces potential issues for human review — it does not make compliance determinations. All outputs are framed as "suggested review items."',
+      id: 'q-004', persona: 'Procurement Manager', difficulty: 'critical',
+      question: "What's the all-in cost over three years, and do you have a reference customer with measurable ROI?",
+      follow_up: 'Annual per-seat SaaS with no implementation fee. Design partners report 18% lift in first-call conversion and 40% fewer manager coaching hours. Happy to connect you with two reference customers.',
     },
     {
       id: 'q-005', persona: 'Technical Reviewer', difficulty: 'info',
@@ -205,10 +205,10 @@ const LIVE_INROOM_FINDINGS: Finding[] = [
   },
   {
     id: 'lf-009', agent: 'persona', severity: 'warning',
-    title: 'Compliance Officer: data retention policy not mentioned',
-    detail: 'No mention of how long rehearsal recordings are retained locally.',
-    suggestion: 'Add one sentence on local-only storage and auto-deletion policy.',
-    timestamp: 240, persona: 'compliance_officer', live: true,
+    title: 'Procurement Manager: TCO and integration path not addressed',
+    detail: 'No mention of three-year total cost or CRM integrations. Procurement will block sign-off without this.',
+    suggestion: 'Add a slide covering per-seat pricing, implementation timeline, and Salesforce/Gong integrations.',
+    timestamp: 240, persona: 'procurement_manager', live: true,
   },
 ];
 
@@ -253,13 +253,13 @@ export const MOCK_LIVE_INROOM_REPORT: ReadinessReport = {
       question: "What does '3× faster' mean exactly — 3× vs. which competitor, on which benchmark?",
     },
     {
-      id: 'lq-003', persona: 'Compliance Officer', difficulty: 'critical', timestamp: 112,
-      question: "You said 'no data leaves the device' — does that apply even when the optional cloud sync is enabled?",
-      follow_up: "Our default mode is fully on-device. Cloud sync is opt-in and clearly labeled.",
+      id: 'lq-003', persona: 'Procurement Manager', difficulty: 'critical', timestamp: 112,
+      question: "What's the all-in cost over three years, including implementation and training?",
+      follow_up: "Annual per-seat SaaS with no implementation fee. Three-year TCO for a 50-rep team runs roughly $88k, with design partners reporting 40% fewer manager coaching hours.",
     },
     {
-      id: 'lq-004', persona: 'Compliance Officer', difficulty: 'warning', timestamp: 240,
-      question: 'How long are session recordings retained, and is there an auto-delete policy?',
+      id: 'lq-004', persona: 'Procurement Manager', difficulty: 'warning', timestamp: 240,
+      question: 'How does this integrate with our existing CRM and sales enablement stack?',
     },
     {
       id: 'lq-005', persona: 'Technical Reviewer', difficulty: 'warning', timestamp: 70,
@@ -337,10 +337,10 @@ const LIVE_REMOTE_FINDINGS: Finding[] = [
   },
   {
     id: 'rf-010', agent: 'persona', severity: 'warning',
-    title: 'Compliance Officer: data retention policy missing',
-    detail: 'Eight minutes in and no mention of rehearsal recording retention.',
-    suggestion: 'Add one sentence on local-only storage and auto-deletion policy.',
-    timestamp: 440, persona: 'compliance_officer', live: true, cue_hint: 'mention retention',
+    title: 'Procurement Manager: TCO and integration path not addressed',
+    detail: 'Eight minutes in and no mention of three-year cost or CRM integrations. Procurement will block sign-off without this.',
+    suggestion: 'Add a slide covering per-seat pricing, implementation timeline, and Salesforce/Gong integrations.',
+    timestamp: 440, persona: 'procurement_manager', live: true, cue_hint: 'address TCO',
   },
   {
     id: 'rf-011', agent: 'compliance', severity: 'info',
@@ -393,13 +393,13 @@ export const MOCK_LIVE_REMOTE_REPORT: ReadinessReport = {
       question: "What does '3× faster' mean — 3× vs. which competitor, on which benchmark?",
     },
     {
-      id: 'rq-003', persona: 'Compliance Officer', difficulty: 'critical', timestamp: 200,
-      question: "The slide says 'nothing leaves the device' but there's a cloud-sync icon — which is accurate?",
-      follow_up: "Our default mode is fully on-device. Cloud sync is opt-in and clearly labeled.",
+      id: 'rq-003', persona: 'Procurement Manager', difficulty: 'critical', timestamp: 200,
+      question: "What are the contract terms — minimum commitment, auto-renewal, and data portability on exit?",
+      follow_up: "Annual commitment, 30-day cancellation notice. Full JSON data export available at any time. No lock-in.",
     },
     {
-      id: 'rq-004', persona: 'Compliance Officer', difficulty: 'warning', timestamp: 440,
-      question: 'How long are session recordings retained, and is there an auditable deletion log?',
+      id: 'rq-004', persona: 'Procurement Manager', difficulty: 'warning', timestamp: 440,
+      question: 'Can you provide a reference customer in our industry with a quantified ROI?',
     },
     {
       id: 'rq-005', persona: 'Technical Reviewer', difficulty: 'warning', timestamp: 130,

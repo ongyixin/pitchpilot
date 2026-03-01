@@ -1,9 +1,19 @@
 """
 Gemma 3 4B adapter — text-only reasoning for agent analysis.
 
-In production this talks to a locally running Ollama instance via the shared
-httpx.AsyncClient (backend.models.ollama_client).  When settings.mock_mode is
-True it returns deterministic stub responses.
+Backend selection mirrors the gemma3n_backend setting:
+
+  ``PITCHPILOT_GEMMA3N_BACKEND=huggingface``
+      Uses Gemma3HFAdapter — delegates text-only calls to the same
+      Gemma3nHFAdapter singleton already loaded for multimodal tasks.
+      No second model load; shares the LRU-cached weights.
+
+  ``PITCHPILOT_GEMMA3N_BACKEND=ollama``
+      Uses Gemma3Adapter — talks to a locally running Ollama instance via
+      the shared httpx.AsyncClient.
+
+When settings.mock_mode is True, MockTextAdapter is always used regardless
+of backend setting.
 """
 
 from __future__ import annotations
@@ -98,10 +108,53 @@ class MockTextAdapter(BaseTextModel):
 }"""
 
 
+class Gemma3HFAdapter(BaseTextModel):
+    """
+    Text-only reasoning adapter backed by the HuggingFace Gemma 3n weights.
+
+    Delegates to Gemma3nHFAdapter.generate_text(), which means the model is
+    loaded exactly once (the LRU cache in gemma3n_hf._load_model_and_processor
+    is shared).  No Ollama instance required.
+    """
+
+    def __init__(self) -> None:
+        from backend.models.gemma3n_hf import Gemma3nHFAdapter  # noqa: PLC0415
+        model_id = getattr(settings, "gemma3n_hf_model_id", "google/gemma-3n-e4b-it")
+        self._hf = Gemma3nHFAdapter(model_id)
+
+    @property
+    def model_name(self) -> str:
+        return self._hf.model_name
+
+    async def generate(
+        self,
+        prompt: str,
+        system: Optional[str] = None,
+        temperature: float = 0.3,
+        max_tokens: int = 2048,
+        response_format: Optional[str] = None,
+    ) -> str:
+        return await self._hf.generate_text(
+            prompt=prompt,
+            system=system,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+
+    async def is_available(self) -> bool:
+        return await self._hf.is_available()
+
+
 def get_gemma3_adapter() -> BaseTextModel:
     """Return the appropriate Gemma 3 adapter based on settings."""
     if settings.mock_mode:
         logger.info("Mock mode enabled — using MockTextAdapter for Gemma 3")
         return MockTextAdapter()
-    logger.info(f"Using Gemma3Adapter via Ollama at {settings.ollama_base_url}")
+
+    backend = getattr(settings, "gemma3n_backend", "huggingface").lower()
+    if backend == "huggingface":
+        logger.info("[gemma3] Using Gemma3HFAdapter (shared HF weights)")
+        return Gemma3HFAdapter()
+
+    logger.info(f"[gemma3] Using Gemma3Adapter via Ollama at {settings.ollama_base_url}")
     return Gemma3Adapter()

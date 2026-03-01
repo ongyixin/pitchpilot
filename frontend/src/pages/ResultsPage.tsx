@@ -172,7 +172,7 @@ export function ResultsPage({ report, sessionId, videoFile, timeline = [], onRes
         <div className="flex items-end justify-between gap-4">
           <div className="flex items-end gap-4">
             <h1 className="font-display text-5xl leading-none tracking-wider text-text-primary">
-              P<span className="italic">ITCH</span><span className="ml-4">PILOT</span>
+              P<span className="italic">ITCH</span><span style={{ marginLeft: '0.1em' }}>PILOT</span>
             </h1>
             <span className="font-mono text-xs text-text-muted pb-1">
               SESSION&nbsp;

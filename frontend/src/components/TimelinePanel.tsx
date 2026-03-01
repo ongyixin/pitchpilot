@@ -100,17 +100,21 @@ export function TimelinePanel({ annotations, duration, currentTime, onSeek, onSe
         })}
       </div>
 
-      {/* Tick labels */}
+      {/* Tick labels — clickable to seek */}
       <div className="relative h-4">
-        {[0, 0.25, 0.5, 0.75, 1].map((frac) => (
-          <span
-            key={frac}
-            style={{ left: `${frac * 100}%` }}
-            className="absolute -translate-x-1/2 font-mono text-[10px] text-text-muted"
-          >
-            {formatTime(frac * effectiveDuration)}
-          </span>
-        ))}
+        {[0, 0.25, 0.5, 0.75, 1].map((frac) => {
+          const ts = frac * effectiveDuration;
+          return (
+            <button
+              key={frac}
+              onClick={() => onSeek(ts)}
+              style={{ left: `${frac * 100}%` }}
+              className="absolute -translate-x-1/2 font-mono text-[10px] text-text-muted hover:text-text-primary transition-colors cursor-pointer"
+            >
+              {formatTime(ts)}
+            </button>
+          );
+        })}
       </div>
 
       <div className="flex items-center gap-3">

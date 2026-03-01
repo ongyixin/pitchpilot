@@ -102,6 +102,7 @@ class PipelineContext:
     policy_text: str = ""  # Loaded compliance/policy document text
     presentation_title: str = ""
     personas: list[str] = field(default_factory=list)  # persona names to simulate
+    enabled_agents: list[str] = field(default_factory=lambda: ["coach", "compliance", "persona"])
     total_duration: float = 0.0  # seconds
 
     @property

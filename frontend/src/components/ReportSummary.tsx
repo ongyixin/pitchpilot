@@ -6,7 +6,7 @@ import type { ReadinessReport, PersonaQuestion } from '@/types/api';
 const PERSONA_BADGE: Record<string, string> = {
   skeptical_investor: 'badge-coach',
   technical_reviewer: 'badge-persona',
-  compliance_officer: 'badge-compliance',
+  procurement_manager: 'badge-compliance',
 };
 
 const DIFFICULTY_LABEL: Record<string, string> = {

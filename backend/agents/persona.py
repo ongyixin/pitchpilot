@@ -7,7 +7,7 @@ objections, and challenges each persona would raise after hearing the pitch.
 Personas (configurable via PipelineContext.personas):
   - Skeptical Investor
   - Technical Reviewer
-  - Compliance Officer
+  - Procurement Manager
   - Friendly Customer
   - Confused First-Time User
 
@@ -127,45 +127,60 @@ _MOCK_PERSONA_DATA: dict[str, dict[str, Any]] = {
             },
         ],
     },
-    "Compliance Officer": {
-        "persuasiveness_rating": 5,
-        "persuasiveness_note": "GDPR claim is too broad. The architecture needs explicit data flow documentation before we can approve deployment.",
+    "Procurement Manager": {
+        "persuasiveness_rating": 6,
+        "persuasiveness_note": "Strong use-case fit, but total cost of ownership and integration complexity need to be quantified before this goes to budget approval.",
         "questions": [
             {
-                "question": "You said GDPR-compliant out of the box — can you show me the data processing addendum and technical measures?",
-                "question_type": "challenge",
-                "difficulty": "hard",
-                "context": "Compliance officers require documentation, not slides.",
-                "suggested_answer": (
-                    "We have a standard DPA template. Our on-device architecture means no personal data "
-                    "is transmitted to our servers — we're a data processor with zero retention. "
-                    "Full technical documentation available under NDA."
-                ),
-                "timestamp_hint": 160.0,
-            },
-            {
-                "question": "Does your system record audio and video? Who controls that data, and what's the retention policy?",
+                "question": "What's the all-in cost over three years — licences, implementation, training, and support?",
                 "question_type": "clarification",
-                "difficulty": "medium",
-                "context": "Core data governance question.",
+                "difficulty": "hard",
+                "context": "Procurement needs a fully-loaded TCO number, not just per-seat price.",
                 "suggested_answer": (
-                    "All recordings stay on the user's device. "
-                    "We never transmit, store, or access them. "
-                    "Users control retention — they can delete at any time. "
-                    "There is no cloud storage component by default."
+                    "Per-seat SaaS at $49/mo with no implementation fee — it's self-serve onboarding. "
+                    "Enterprise tier includes dedicated CSM and policy document management. "
+                    "Three-year TCO for a 50-rep team runs roughly $88k, with measurable time savings "
+                    "our design partners report at ~2 hours per rep per week in prep time."
                 ),
                 "timestamp_hint": None,
             },
             {
-                "question": "What happens when someone uploads a document containing personal data to your OCR pipeline?",
+                "question": "How does this integrate with our existing CRM and sales enablement stack — Salesforce, Gong, Highspot?",
                 "question_type": "challenge",
                 "difficulty": "hard",
-                "context": "Edge case data handling.",
+                "context": "Procurement evaluates integration risk and hidden engineering costs.",
                 "suggested_answer": (
-                    "OCR runs locally on-device. No data is sent externally. "
-                    "We recommend users not process documents containing personal data, "
-                    "and our terms make clear the user is responsible for compliance "
-                    "with applicable laws regarding their own data."
+                    "Current integrations: Salesforce opportunity sync for session tagging, "
+                    "and Gong call import for post-call rehearsal. "
+                    "Highspot is on our H2 roadmap. "
+                    "The on-device architecture means no middleware — "
+                    "the desktop client connects directly to your CRM via OAuth."
+                ),
+                "timestamp_hint": 200.0,
+            },
+            {
+                "question": "What are your contract terms — minimum commitment, auto-renewal, and what happens to our data if we cancel?",
+                "question_type": "clarification",
+                "difficulty": "medium",
+                "context": "Standard vendor lock-in and exit-cost evaluation.",
+                "suggested_answer": (
+                    "Annual commitment, 30-day cancellation notice before renewal. "
+                    "On cancellation, all session data is purged within 14 days — "
+                    "you can export a full JSON archive at any time from the dashboard. "
+                    "No lock-in: the export format is documented and open."
+                ),
+                "timestamp_hint": None,
+            },
+            {
+                "question": "Can you give me a reference customer in our industry with a quantified ROI?",
+                "question_type": "challenge",
+                "difficulty": "hard",
+                "context": "Procurement requires proof of value from a comparable organisation.",
+                "suggested_answer": (
+                    "We have two design partners in enterprise SaaS sales happy to speak with you. "
+                    "Their reported outcomes: 18% increase in first-call-to-demo conversion and "
+                    "a 40% reduction in manager rehearsal-coaching hours per quarter. "
+                    "I'll send an intro email today — we can schedule a 30-minute reference call."
                 ),
                 "timestamp_hint": None,
             },
@@ -233,7 +248,9 @@ class PersonaAgent(BaseAgent):
         if self.is_mock:
             return self.mock_findings(context, claim)
 
-        personas = context.personas if context.personas else DEFAULT_PERSONAS
+        personas = context.personas
+        if not personas:
+            return []
 
         async def _run_persona(persona_name: str) -> list[Finding]:
             import json as _json
@@ -299,7 +316,7 @@ class PersonaAgent(BaseAgent):
                 question=q.get("question", ""),
                 question_type=q.get("question_type", "clarification"),
                 difficulty=q.get("difficulty", "medium"),
-                timestamp=q.get("timestamp_hint"),
+                timestamp=self._parse_timestamp(q.get("timestamp_hint")),
                 suggested_answer=q.get("suggested_answer"),
                 finding_id=None,
             )
@@ -310,7 +327,7 @@ class PersonaAgent(BaseAgent):
                 title=f"{persona_name}: {q.get('question', '')[:60]}",
                 description=q.get("question", ""),
                 suggestion=q.get("suggested_answer"),
-                timestamp=q.get("timestamp_hint"),
+                timestamp=self._parse_timestamp(q.get("timestamp_hint")),
                 claim_ref=claim.id if claim else None,
                 metadata={
                     "persona": persona_name,
@@ -336,7 +353,9 @@ class PersonaAgent(BaseAgent):
         context: PipelineContext,
         claim: Optional[Claim] = None,
     ) -> list[Finding]:
-        personas = context.personas if context.personas else DEFAULT_PERSONAS
+        personas = context.personas
+        if not personas:
+            return []
         findings: list[Finding] = []
         for persona_name in personas:
             findings.extend(self._mock_persona_findings(persona_name, claim))
@@ -370,7 +389,7 @@ class PersonaAgent(BaseAgent):
                 question=q["question"],
                 question_type=q["question_type"],
                 difficulty=q["difficulty"],
-                timestamp=q.get("timestamp_hint"),
+                timestamp=self._parse_timestamp(q.get("timestamp_hint")),
                 suggested_answer=q.get("suggested_answer"),
                 finding_id=None,
             )
@@ -381,7 +400,7 @@ class PersonaAgent(BaseAgent):
                 title=f"{persona_name}: {q['question'][:60]}",
                 description=q["question"],
                 suggestion=q.get("suggested_answer"),
-                timestamp=q.get("timestamp_hint"),
+                timestamp=self._parse_timestamp(q.get("timestamp_hint")),
                 claim_ref=claim.id if claim else None,
                 metadata={
                     "persona": persona_name,

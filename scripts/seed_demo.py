@@ -57,7 +57,7 @@ def seed_demo(
 
         resp = client.post(
             "/api/session/demo",
-            params={"personas": "Skeptical Investor,Technical Reviewer,Compliance Officer"},
+            params={"personas": "Skeptical Investor,Technical Reviewer,Procurement Manager"},
         )
         resp.raise_for_status()
         start = resp.json()

@@ -207,7 +207,7 @@ class ComplianceAgent(BaseAgent):
                     title=item.get("title", ""),
                     description=item.get("description", ""),
                     suggestion=item.get("suggestion"),
-                    timestamp=item.get("timestamp_hint"),
+                    timestamp=self._parse_timestamp(item.get("timestamp_hint")),
                     claim_ref=claim.id if claim else None,
                     metadata=metadata,
                 )
@@ -236,7 +236,7 @@ class ComplianceAgent(BaseAgent):
                 title=item["title"],
                 description=item["description"],
                 suggestion=item.get("suggestion"),
-                timestamp=item.get("timestamp_hint"),
+                timestamp=self._parse_timestamp(item.get("timestamp_hint")),
                 claim_ref=claim.id if claim else None,
                 metadata=metadata,
             )

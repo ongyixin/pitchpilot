@@ -69,7 +69,7 @@ CLAIM_FILLS = [
 PERSONA_FILLS = [
     "Skeptical Investor",
     "Technical Reviewer",
-    "Compliance Officer",
+    "Procurement Manager",
     "Sales Director",
     "Enterprise IT Buyer",
 ]

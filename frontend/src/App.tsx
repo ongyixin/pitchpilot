@@ -8,7 +8,7 @@ import { ResultsPage } from '@/pages/ResultsPage';
 import { LiveSessionPage } from '@/pages/LiveSessionPage';
 import { InRoomModePage } from '@/pages/InRoomModePage';
 import { RemoteModePage } from '@/pages/RemoteModePage';
-import type { PersonaConfig } from '@/types/api';
+import type { AgentConfig, PersonaConfig } from '@/types/api';
 import type { SessionMode } from '@/types';
 import { isLiveMode } from '@/types';
 
@@ -37,14 +37,14 @@ export default function App() {
   const [showLanding, setShowLanding] = useState(true);
   const [initialSetupMode, setInitialSetupMode] = useState<'review' | 'live_in_room' | 'live_remote'>('review');
 
-  const handleStart = (video: File, docs: File[], personas: PersonaConfig[], mode: SessionMode = 'review', presentationMaterials: File[] = []) => {
+  const handleStart = (video: File, docs: File[], personas: PersonaConfig[], mode: SessionMode = 'review', presentationMaterials: File[] = [], agents: AgentConfig[] = []) => {
     setAppMode(mode);
     if (isLiveMode(mode)) {
       setVideoFile(null);
-      liveSession.startSession(personas, docs, mode, presentationMaterials);
+      liveSession.startSession(personas, docs, mode, presentationMaterials, agents);
     } else {
       setVideoFile(video);
-      startAnalysis(video, docs, personas, presentationMaterials);
+      startAnalysis(video, docs, personas, presentationMaterials, agents);
     }
   };
 

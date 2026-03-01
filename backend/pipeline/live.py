@@ -95,9 +95,9 @@ _MOCK_OBJECTIONS = [
     ],
     [
         {
-            "question": "Has your automated pipeline been reviewed for GDPR Article 22?",
-            "suggested_answer": "The pipeline is local-only — no personal data leaves the device. Article 22 applies to automated decisions with legal effect; our tool produces coaching cues, not binding decisions.",
-            "persona": "Compliance Officer",
+            "question": "What's the all-in cost over three years, and how does this integrate with our existing CRM stack?",
+            "suggested_answer": "Annual per-seat SaaS with no implementation fee — self-serve onboarding. Salesforce and Gong integrations are live today. Three-year TCO for a 50-rep team runs roughly $88k, with design partners reporting 40% reduction in manager coaching hours.",
+            "persona": "Procurement Manager",
             "difficulty": "hard",
         },
         {
@@ -197,6 +197,7 @@ class LivePipeline:
         session_id: str,
         orchestrator: Optional[Orchestrator] = None,
         personas: Optional[list[str]] = None,
+        enabled_agents: Optional[list[str]] = None,
         policy_text: str = "",
         presentation_title: str = "",
         mode: str = "rehearsal",
@@ -204,6 +205,7 @@ class LivePipeline:
         self.session_id = session_id
         self._orchestrator = orchestrator or Orchestrator()
         self.personas: list[str] = personas or []
+        self.enabled_agents: list[str] = enabled_agents if enabled_agents is not None else ["coach", "compliance", "persona"]
         self.policy_text = policy_text
         self.presentation_title = presentation_title
         self.mode = mode  # "rehearsal" | "in_room" | "remote"
@@ -671,6 +673,7 @@ class LivePipeline:
             policy_text=self.policy_text,
             presentation_title=self.presentation_title,
             personas=self.personas,
+            enabled_agents=self.enabled_agents,
             total_duration=elapsed,
         )
 

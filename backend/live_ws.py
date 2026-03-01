@@ -139,6 +139,7 @@ async def live_session_ws(websocket: WebSocket, sessions: dict) -> None:
             return
 
         personas: list[str] = init_msg.get("personas", [])
+        enabled_agents: list[str] = init_msg.get("enabled_agents", ["coach", "compliance", "persona"])
         policy_text: str = init_msg.get("policy_text", "")
         title: str = init_msg.get("title", "Live Session")
         raw_mode: str = init_msg.get("mode", "rehearsal")
@@ -161,6 +162,7 @@ async def live_session_ws(websocket: WebSocket, sessions: dict) -> None:
             video_filename="live_session.webm",
             policy_filenames=[],
             personas=personas,
+            enabled_agents=enabled_agents,
             mode=session_mode,
             status=SessionStatus.PROCESSING,
             progress=0,
@@ -175,6 +177,7 @@ async def live_session_ws(websocket: WebSocket, sessions: dict) -> None:
             session_id=session_id,
             orchestrator=orchestrator,
             personas=personas,
+            enabled_agents=enabled_agents,
             policy_text=policy_text,
             presentation_title=title,
             mode=pipeline_mode,

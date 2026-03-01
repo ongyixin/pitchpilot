@@ -104,3 +104,11 @@ export interface PersonaConfig {
   icon: string;
   enabled: boolean;
 }
+
+// Agent toggle configuration for UI
+export interface AgentConfig {
+  id: AgentName;
+  label: string;
+  description: string;
+  enabled: boolean;
+}

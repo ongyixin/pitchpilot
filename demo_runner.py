@@ -205,7 +205,7 @@ def build_context() -> PipelineContext:
         claims=SAMPLE_CLAIMS,
         policy_text=POLICY_TEXT,
         presentation_title="PitchPilot — Demo Rehearsal",
-        personas=["Skeptical Investor", "Technical Reviewer", "Compliance Officer"],
+        personas=["Skeptical Investor", "Technical Reviewer", "Procurement Manager"],
         total_duration=250.0,
     )
 

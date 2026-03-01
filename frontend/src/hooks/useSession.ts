@@ -2,7 +2,7 @@ import { useState, useCallback, useRef } from 'react';
 import { api } from '@/lib/api';
 import { MOCK_STATUS_SEQUENCE, MOCK_REPORT, MOCK_TIMELINE } from '@/lib/mock-data';
 import type { SessionStatusResponse, ReadinessReport, TimelineAnnotation } from '@/types';
-import type { PersonaConfig } from '@/types/api';
+import type { AgentConfig, PersonaConfig } from '@/types/api';
 
 export type AppView = 'setup' | 'analyzing' | 'results';
 
@@ -80,11 +80,12 @@ export function useSession() {
   );
 
   const startAnalysis = useCallback(
-    async (video: File, docs: File[], personas: PersonaConfig[], presentationMaterials: File[] = []) => {
+    async (video: File, docs: File[], personas: PersonaConfig[], presentationMaterials: File[] = [], agents: AgentConfig[] = []) => {
       setError(null);
       setView('analyzing');
 
       const enabledPersonas = personas.filter((p) => p.enabled).map((p) => p.id);
+      const enabledAgents = agents.filter((a) => a.enabled).map((a) => a.id);
 
       if (USE_MOCK) {
         setSessionId('demo-001');
@@ -93,7 +94,7 @@ export function useSession() {
       }
 
       try {
-        const { session_id } = await api.startSession(video, docs, enabledPersonas, presentationMaterials);
+        const { session_id } = await api.startSession(video, docs, enabledPersonas, presentationMaterials, enabledAgents);
         setSessionId(session_id);
         startRealPolling(session_id);
       } catch (err) {

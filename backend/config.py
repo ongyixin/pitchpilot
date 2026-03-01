@@ -75,6 +75,25 @@ class Settings(BaseSettings):
     )
 
     # ------------------------------------------------------------------
+    # Gemma 3n backend selection
+    # ------------------------------------------------------------------
+    gemma3n_backend: str = Field(
+        default="huggingface",
+        description=(
+            "Which backend to use for multimodal (OCR + audio) inference. "
+            "'huggingface' — full model via HuggingFace Transformers (text + image + audio). "
+            "'ollama' — GGUF via local Ollama (text + image only; audio falls back to mlx-whisper)."
+        ),
+    )
+    gemma3n_hf_model_id: str = Field(
+        default="google/gemma-3n-e4b-it",
+        description=(
+            "HuggingFace model ID for Gemma 3n when gemma3n_backend=huggingface. "
+            "Requires HuggingFace login and Gemma licence acceptance."
+        ),
+    )
+
+    # ------------------------------------------------------------------
     # Ollama / Gemma 3n  (multimodal processing)
     # ------------------------------------------------------------------
     ollama_base_url: str = Field(
@@ -83,7 +102,7 @@ class Settings(BaseSettings):
     )
     gemma3n_model: str = Field(
         default="gemma3n:e4b",
-        description="Ollama model tag for Gemma 3n",
+        description="Ollama model tag for Gemma 3n (used when gemma3n_backend=ollama)",
     )
     gemma3_model: str = Field(
         default="gemma3:4b",
@@ -156,6 +175,23 @@ class Settings(BaseSettings):
     agent_concurrency: int = Field(
         default=3,
         description="Maximum number of concurrent agent LLM calls per batch.",
+    )
+    agent_per_call_timeout_seconds: float = Field(
+        default=30.0,
+        description=(
+            "Maximum seconds to wait for a single agent LLM reasoning call "
+            "(coach, compliance, persona). When exceeded, the call falls back to "
+            "mock findings for that claim so the pipeline can proceed. "
+            "Separate from hf_inference_timeout_seconds, which gates raw model.generate()."
+        ),
+    )
+    hf_inference_timeout_seconds: float = Field(
+        default=120.0,
+        description=(
+            "Maximum seconds to wait for a single HuggingFace model.generate() call "
+            "before cancelling and falling back to mock findings. "
+            "Prevents the pipeline from hanging indefinitely on slow CPU inference."
+        ),
     )
     retain_artifacts: bool = Field(
         default=False,
@@ -252,7 +288,7 @@ MAX_CLAIMS_PER_SESSION: int = settings.max_claims_per_session
 DEFAULT_PERSONAS: list[str] = [
     "Skeptical Investor",
     "Technical Reviewer",
-    "Compliance Officer",
+    "Procurement Manager",
 ]
 
 # Ollama / model settings (flat constants for easy import)

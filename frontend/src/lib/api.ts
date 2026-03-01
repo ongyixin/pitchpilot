@@ -37,8 +37,9 @@ export const api = {
   startSession(
     video: File,
     policyDocs: File[] = [],
-    personas: string[] = ["Skeptical Investor", "Technical Reviewer", "Compliance Officer"],
+    personas: string[] = ["Skeptical Investor", "Technical Reviewer", "Procurement Manager"],
     presentationMaterials: File[] = [],
+    enabledAgents: string[] = ["coach", "compliance", "persona"],
   ): Promise<SessionStartResponse> {
     const form = new FormData();
     form.append("video", video);
@@ -49,6 +50,7 @@ export const api = {
       form.append("presentation_materials", material);
     }
     form.append("personas", personas.join(","));
+    form.append("enabled_agents", enabledAgents.join(","));
     return request<SessionStartResponse>(`${BASE}/session/start`, {
       method: "POST",
       body: form,
@@ -80,7 +82,7 @@ export const api = {
    * Backend populates the session with mock results.
    */
   startDemoSession(
-    personas: string[] = ["Skeptical Investor", "Technical Reviewer", "Compliance Officer"]
+    personas: string[] = ["Skeptical Investor", "Technical Reviewer", "Procurement Manager"]
   ): Promise<SessionStartResponse> {
     const params = new URLSearchParams({ personas: personas.join(",") });
     return request<SessionStartResponse>(`${BASE}/session/demo?${params}`, {

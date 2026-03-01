@@ -38,7 +38,7 @@ export function AnalyzingPage({ status, sessionId }: Props) {
         <div className="max-w-lg mx-auto">
           <div className="flex items-end justify-between gap-4">
             <h1 className="font-display text-8xl leading-none text-text-primary tracking-wider">
-              P<span className="italic">ITCH</span><span className="ml-4">PILOT</span>
+              P<span className="italic">ITCH</span><span style={{ marginLeft: '0.1em' }}>PILOT</span>
             </h1>
             {sessionId && (
               <div className="text-right pb-2 shrink-0">

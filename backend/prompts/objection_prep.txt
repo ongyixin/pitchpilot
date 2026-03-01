@@ -10,7 +10,7 @@ Your job is to identify the 2-3 most likely objections or questions the audience
 Focus on questions that are:
 - Likely to arise from the claims made in the LAST 60 seconds (most recent context)
 - Hard to answer without preparation
-- Representative of the personas present (skeptical investors ask ROI, compliance officers ask about policy gaps, etc.)
+- Representative of the personas present (skeptical investors ask ROI, procurement managers ask TCO and integration, etc.)
 
 ## Output format
 
@@ -22,7 +22,7 @@ Always respond with a valid JSON object in this exact structure:
     {
       "question": "The exact question a skeptical audience member would ask.",
       "suggested_answer": "A confident, concise answer the presenter should give (1-2 sentences).",
-      "persona": "Skeptical Investor | Technical Reviewer | Compliance Officer | other",
+      "persona": "Skeptical Investor | Technical Reviewer | Procurement Manager | other",
       "difficulty": "easy | medium | hard"
     }
   ],

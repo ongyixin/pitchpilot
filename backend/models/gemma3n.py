@@ -1,14 +1,19 @@
 """
 Gemma 3n adapter — multimodal OCR, transcription, and claim extraction.
 
-In production this talks to a locally running Ollama instance via the shared
-httpx.AsyncClient (backend.models.ollama_client).  When settings.mock_mode is
-True (or Ollama is unreachable) it falls back to MockMultimodalAdapter so the
-pipeline can still run end-to-end.
+Backend selection (controlled by settings / env vars):
 
-Swap strategy for PaliGemma:
-  Replace the ``generate_with_image`` method body to call the PaliGemma
-  inference endpoint instead of Ollama.  The interface is identical.
+  ``PITCHPILOT_GEMMA3N_BACKEND=huggingface``  (default)
+      Uses Gemma3nHFAdapter — full multimodal weights from HuggingFace,
+      including the vision and audio encoders.  Requires a HuggingFace
+      account with the Gemma licence accepted and ``huggingface-cli login``.
+
+  ``PITCHPILOT_GEMMA3N_BACKEND=ollama``
+      Uses Gemma3nAdapter (Ollama GGUF) — text + image only; audio calls
+      return empty string and fall through to the mlx-whisper fallback.
+
+When ``settings.mock_mode`` is True, MockMultimodalAdapter is always used
+regardless of backend setting.
 """
 
 from __future__ import annotations
@@ -92,19 +97,16 @@ class Gemma3nAdapter(BaseMultimodalModel):
         temperature: float = 0.1,
         max_tokens: int = 4096,
     ) -> str:
-        with open(audio_path, "rb") as f:
-            audio_b64 = base64.b64encode(f.read()).decode()
-        payload: dict = {
-            "model": self._model,
-            "prompt": prompt,
-            "images": [audio_b64],
-            "stream": False,
-            "format": "json",
-            "options": {"temperature": temperature, "num_predict": max_tokens},
-        }
-        if system:
-            payload["system"] = system
-        return await self._generate(payload)
+        # The GGUF version of gemma3n served by Ollama is text-only; the audio
+        # encoder is not included in the quantised weights. This call will always
+        # return an empty/useless response. TranscriptionPipeline falls back to
+        # mlx-whisper automatically when this returns no segments.
+        logger.warning(
+            "[gemma3n] generate_with_audio called but gemma3n:e4b (Ollama GGUF) "
+            "does not include an audio encoder. Returning empty string so the "
+            "caller can fall back to mlx-whisper."
+        )
+        return ""
 
     async def is_available(self) -> bool:
         from backend.models.ollama_client import get_ollama_client
@@ -186,9 +188,25 @@ class MockMultimodalAdapter(BaseMultimodalModel):
 
 
 def get_gemma3n_adapter() -> BaseMultimodalModel:
-    """Return the appropriate Gemma 3n adapter based on settings."""
+    """
+    Return the appropriate Gemma 3n adapter based on settings.
+
+    Selection priority:
+      1. mock_mode=True          → MockMultimodalAdapter (no model needed)
+      2. gemma3n_backend=huggingface → Gemma3nHFAdapter (full multimodal)
+      3. gemma3n_backend=ollama  → Gemma3nAdapter (text+image only via Ollama)
+    """
     if settings.mock_mode:
-        logger.info("Mock mode enabled — using MockMultimodalAdapter for Gemma 3n")
+        logger.info("[gemma3n] Mock mode — using MockMultimodalAdapter")
         return MockMultimodalAdapter()
-    logger.info(f"Using Gemma3nAdapter via Ollama at {settings.ollama_base_url}")
+
+    backend = getattr(settings, "gemma3n_backend", "huggingface").lower()
+
+    if backend == "huggingface":
+        from backend.models.gemma3n_hf import Gemma3nHFAdapter  # noqa: PLC0415
+        model_id = getattr(settings, "gemma3n_hf_model_id", "google/gemma-3n-e4b-it")
+        logger.info(f"[gemma3n] Using Gemma3nHFAdapter — model={model_id!r}")
+        return Gemma3nHFAdapter(model_id)
+
+    logger.info(f"[gemma3n] Using Gemma3nAdapter (Ollama) at {settings.ollama_base_url}")
     return Gemma3nAdapter()

@@ -69,10 +69,44 @@ app.add_middleware(
 )
 
 # ---------------------------------------------------------------------------
-# In-memory session store
+# Session store — in-memory with disk persistence across hot-reloads
 # ---------------------------------------------------------------------------
 
 _sessions: dict[str, Session] = {}
+
+# Persisted to a stable tmp directory so uvicorn --reload doesn't lose state.
+_SESSION_STORE_DIR = Path(tempfile.gettempdir()) / "pitchpilot_sessions"
+
+
+def _persist_session(session: Session) -> None:
+    """Write a single session to disk as JSON (best-effort, never raises)."""
+    try:
+        _SESSION_STORE_DIR.mkdir(parents=True, exist_ok=True)
+        path = _SESSION_STORE_DIR / f"{session.id}.json"
+        path.write_text(session.model_dump_json())
+    except Exception:
+        pass  # persistence is best-effort; don't break the pipeline
+
+
+def _load_persisted_sessions() -> None:
+    """
+    Re-hydrate sessions from disk on startup.
+
+    Any session that was mid-flight (PROCESSING/PENDING) when the server died
+    is transitioned to FAILED so the frontend stops polling and shows an error.
+    """
+    if not _SESSION_STORE_DIR.exists():
+        return
+    for path in _SESSION_STORE_DIR.glob("*.json"):
+        try:
+            session = Session.model_validate_json(path.read_text())
+            if session.status in (SessionStatus.PROCESSING, SessionStatus.PENDING):
+                session.status = SessionStatus.FAILED
+                session.error_message = "Server restarted during processing — please resubmit."
+                session.progress_message = "Pipeline interrupted by server restart"
+            _sessions[str(session.id)] = session
+        except Exception:
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -232,14 +266,14 @@ def _mock_persona_questions() -> list[PersonaQuestion]:
             difficulty=Severity.WARNING,
         ),
         PersonaQuestion(
-            persona="Compliance Officer",
-            question="Your slides say 'no data leaves the device' but slide 8 shows a cloud sync icon — can you clarify?",
+            persona="Procurement Manager",
+            question="What's the all-in cost over three years, including implementation and training?",
             timestamp=112.0,
             difficulty=Severity.CRITICAL,
         ),
         PersonaQuestion(
-            persona="Compliance Officer",
-            question="Has your automated decision pipeline been reviewed against GDPR Article 22?",
+            persona="Procurement Manager",
+            question="How does this integrate with our existing CRM and sales enablement stack?",
             difficulty=Severity.WARNING,
         ),
         PersonaQuestion(
@@ -358,8 +392,12 @@ async def start_session(
         default=[], description="Optional presentation materials (slides, script, speaker notes)"
     ),
     personas: str = Form(
-        default="Skeptical Investor,Technical Reviewer,Compliance Officer",
+        default="Skeptical Investor,Technical Reviewer,Procurement Manager",
         description="Comma-separated audience personas",
+    ),
+    enabled_agents: str = Form(
+        default="coach,compliance,persona",
+        description="Comma-separated agent names to run (coach, compliance, persona)",
     ),
 ) -> SessionStartResponse:
     """
@@ -370,6 +408,7 @@ async def start_session(
 
     session_id = str(uuid4())
     persona_list = [p.strip() for p in personas.split(",") if p.strip()]
+    agent_list = [a.strip() for a in enabled_agents.split(",") if a.strip()]
 
     session = Session(
         id=UUID(session_id),
@@ -377,9 +416,11 @@ async def start_session(
         policy_filenames=[f.filename or "" for f in policy_docs],
         presentation_filenames=[f.filename or "" for f in presentation_materials],
         personas=persona_list,
+        enabled_agents=agent_list,
         created_at=datetime.now(timezone.utc).isoformat(),
     )
     _sessions[session_id] = session
+    _persist_session(session)
 
     if _settings.mock_mode:
         asyncio.create_task(_run_mock_pipeline(session_id))
@@ -416,7 +457,7 @@ async def start_demo_session(
     persona_list = (
         [p.strip() for p in personas.split(",") if p.strip()]
         if personas
-        else ["Skeptical Investor", "Technical Reviewer", "Compliance Officer"]
+        else ["Skeptical Investor", "Technical Reviewer", "Procurement Manager"]
     )
 
     session = Session(
@@ -427,6 +468,7 @@ async def start_demo_session(
         created_at=datetime.now(timezone.utc).isoformat(),
     )
     _sessions[session_id] = session
+    _persist_session(session)
     asyncio.create_task(_run_mock_pipeline(session_id))
 
     return SessionStartResponse(
@@ -468,12 +510,14 @@ async def _run_real_pipeline(
         return
 
     session.status = SessionStatus.PROCESSING
+    _persist_session(session)
 
     def _update(pct: int, message: str) -> None:
         s = _sessions.get(session_id)
         if s:
             s.progress = pct
             s.progress_message = message
+            _persist_session(s)
 
     try:
         # Save policy docs and presentation materials to temp files
@@ -551,6 +595,7 @@ async def _run_real_pipeline(
             slide_ocr=schema_slide_ocr,
             policy_text=policy_text,
             personas=session.personas,
+            enabled_agents=session.enabled_agents,
         )
 
         orchestrator = Orchestrator()
@@ -569,12 +614,14 @@ async def _run_real_pipeline(
         session.status = SessionStatus.COMPLETE
         session.progress = 100
         session.progress_message = "Analysis complete"
+        _persist_session(session)
 
     except Exception as exc:
         tb = traceback.format_exc()
         session.status = SessionStatus.FAILED
         session.error_message = str(exc)
         session.progress_message = f"Pipeline error: {exc}"
+        _persist_session(session)
         _log.error(f"Real pipeline failed for session {session_id}: {exc}\n{tb}")
 
 
@@ -663,6 +710,7 @@ async def start_live_session(body: LiveSessionStartRequest) -> LiveSessionStartR
         video_filename="live_session.webm",
         policy_filenames=[],
         personas=body.personas,
+        enabled_agents=body.enabled_agents,
         mode=body.mode,
         status=SessionStatus.PENDING,
         progress=0,
@@ -734,11 +782,16 @@ async def pipeline_readiness() -> dict:
 
 @app.on_event("startup")
 async def _startup() -> None:
-    """Log current pipeline mode on startup."""
+    """Log current pipeline mode on startup and restore persisted sessions."""
     import logging  # noqa: PLC0415
     from backend.config import settings as _s  # noqa: PLC0415
 
     log = logging.getLogger(__name__)
+    _load_persisted_sessions()
+    restored = len(_sessions)
+    if restored:
+        log.info(f"PitchPilot: restored {restored} session(s) from disk")
+
     if _s.mock_mode:
         log.info("PitchPilot starting in MOCK mode — no Ollama required")
     else:

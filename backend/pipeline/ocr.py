@@ -224,7 +224,7 @@ class OCRPipeline:
             )
             parsed = _parse_ocr_json(raw)
         except Exception as exc:
-            logger.error(f"[ocr] Frame OCR failed for frame {frame.frame_index}: {exc}")
+            logger.exception(f"[ocr] Frame OCR failed for frame {frame.frame_index}: {exc}")
             return []
 
         blocks = []

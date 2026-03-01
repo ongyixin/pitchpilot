@@ -213,7 +213,7 @@ class ClaimExtractor:
                 temperature=0.1,
             )
         except Exception as exc:
-            logger.error(
+            logger.exception(
                 f"[claims] Model call failed for window "
                 f"[{window_start:.1f}-{window_end:.1f}s]: {exc}"
             )

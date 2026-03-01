@@ -165,7 +165,7 @@ def test_start_session_with_policy_doc(client: TestClient):
             "video": ("demo.mp4", dummy_video, "video/mp4"),
             "policy_docs": ("policy.txt", dummy_policy, "text/plain"),
         },
-        data={"personas": "Compliance Officer"},
+        data={"personas": "Procurement Manager"},
     )
     assert resp.status_code == 200
 

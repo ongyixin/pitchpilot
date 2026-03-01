@@ -15,7 +15,7 @@ from enum import Enum
 from typing import List, Optional
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 # ---------------------------------------------------------------------------
@@ -98,6 +98,13 @@ class Finding(BaseModel):
     # Optional 3-6 word phrase for earpiece delivery (live modes only)
     cue_hint: Optional[str] = None
 
+    @field_validator("timestamp", mode="before")
+    @classmethod
+    def _parse_timestamp(cls, v: object) -> object:
+        if isinstance(v, str):
+            return float(v.rstrip("s") or 0)
+        return v
+
 
 class PersonaQuestion(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4())[:8])
@@ -158,6 +165,7 @@ class Session(BaseModel):
     policy_filenames: List[str] = []
     presentation_filenames: List[str] = []
     personas: List[str] = []
+    enabled_agents: List[str] = ["coach", "compliance", "persona"]
     mode: SessionMode = SessionMode.UPLOAD
     status: SessionStatus = SessionStatus.PENDING
     progress: int = 0
@@ -210,6 +218,7 @@ class LiveSessionStartRequest(BaseModel):
     """Body for POST /api/session/start-live — registers a pending live session."""
     mode: SessionMode = SessionMode.LIVE_IN_ROOM
     personas: List[str] = []
+    enabled_agents: List[str] = ["coach", "compliance", "persona"]
     policy_text: str = ""
     title: str = "Live Session"
 

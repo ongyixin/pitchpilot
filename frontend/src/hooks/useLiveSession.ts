@@ -33,7 +33,7 @@ import type {
   ScriptSuggestion,
   SessionMode,
 } from '@/types';
-import type { PersonaConfig, ReadinessReport } from '@/types/api';
+import type { AgentConfig, PersonaConfig, ReadinessReport } from '@/types/api';
 
 // ---------------------------------------------------------------------------
 // Mock mode flag — read from Vite env var; defaults to true (safe for dev)
@@ -49,53 +49,55 @@ const MSG_FRAME = 0x02;
 // ---------------------------------------------------------------------------
 
 const MOCK_TRANSCRIPT_CHUNKS = [
-  "Our platform is fully automated — no manual review required.",
-  "We achieve 99.9% uptime across all enterprise tiers.",
-  "All customer data is stored on-device — nothing leaves your network.",
-  "We outperform every competitor by 3× on inference speed.",
-  "The integration can be deployed in under an hour.",
+  "Good morning, we are presenting PitchPilot, an on-device AI sales coach for InstaLILY sales reps.",
+  "PitchPilot runs locally on your laptop because your sales playbook and pricing strategy cannot leave the device.",
+  "Our system integrates seamlessly with your existing CRM and ERP workflows including SAP and Oracle.",
+  "We guarantee ROI within 90 days for every InstaLILY customer.",
+  "Our on-device model processes sales conversations in real time with no latency.",
+  "We are the only company building domain-trained on-device sales coaching for distribution verticals.",
+  "Our finetuned FunctionGemma model outperforms base Gemma on enterprise sales objection detection.",
+  "InstaLILY sales reps using PitchPilot will close 40% more enterprise deals.",
 ];
 
 const MOCK_FINDINGS: Omit<Finding, 'id'>[] = [
   {
-    agent: 'compliance', severity: 'critical',
-    title: "'Fully automated' conflicts with policy §3.2",
-    detail: "Your enterprise policy requires human review for model outputs above a confidence threshold.",
-    suggestion: "Rephrase to: 'Automated with optional human-in-the-loop review.'",
-    cue_hint: "compliance risk",
-    timestamp: 8, live: true,
-  },
-  {
-    agent: 'coach', severity: 'warning',
-    title: "Pacing is fast — slow down for key metrics",
-    detail: "The 99.9% uptime claim was delivered quickly. Pause after key numbers to let them land.",
-    suggestion: "Add a 1-second pause after stating uptime figures.",
-    cue_hint: "slow down",
-    timestamp: 22, live: true,
+    agent: 'coach', severity: 'info',
+    title: "Strong opening — value proposition is clear",
+    detail: "PitchPilot is immediately positioned as on-device AI coaching for InstaLILY reps. Privacy-first angle lands well.",
+    cue_hint: "strong open",
+    timestamp: 10, live: true,
   },
   {
     agent: 'compliance', severity: 'warning',
-    title: "'Nothing leaves your network' needs qualification",
-    detail: "The blanket privacy claim may be false for customers who enable optional cloud sync.",
-    suggestion: "Add 'by default' and mention the opt-in cloud sync explicitly.",
-    cue_hint: "mention privacy",
-    timestamp: 35, live: true,
-  },
-  {
-    agent: 'coach', severity: 'critical',
-    title: "Speed metric lacks benchmark context",
-    detail: "'3× faster' is compelling but the baseline is never stated.",
-    suggestion: "Name the competitor and link to a reproducible benchmark.",
-    cue_hint: "name the benchmark",
+    title: "Integration claim lacks technical detail",
+    detail: "'Seamless integration' with SAP and Oracle is vague. Ops managers will immediately ask for data mapping specifics, timeline, and cost.",
+    suggestion: "Prepare ETL process details, 6-8 week pilot timeline, and a $15K–$30K cost range.",
+    cue_hint: "integration detail needed",
     timestamp: 48, live: true,
   },
   {
-    agent: 'persona', severity: 'warning',
-    title: "Skeptical Investor: differentiation is unclear",
-    detail: "A skeptical investor would immediately ask how this differs from a well-prompted ChatGPT.",
-    suggestion: "Lead with the on-device / privacy differentiator earlier.",
-    cue_hint: "ROI question likely",
-    timestamp: 60, live: true,
+    agent: 'persona', severity: 'critical',
+    title: "Ops Manager: integration question incoming",
+    detail: "An ops manager will challenge the SAP/Oracle claim — they need data mapping, transformation steps, timeline, and cost.",
+    suggestion: "Lead with a phased integration strategy and name your ETL tooling.",
+    cue_hint: "integration question likely",
+    timestamp: 62, live: true,
+  },
+  {
+    agent: 'persona', severity: 'critical',
+    title: "Investor: ROI guarantee needs quantification",
+    detail: "Guaranteeing ROI without defining it will stop an investor cold. They want numbers and case studies.",
+    suggestion: "Define ROI as 15-20% increase in close rates and reference beta testing data.",
+    cue_hint: "ROI question incoming",
+    timestamp: 85, live: true,
+  },
+  {
+    agent: 'persona', severity: 'critical',
+    title: "CTO: on-device architecture question incoming",
+    detail: "'Only company' with domain-trained on-device coaching is a bold claim — a CTO will probe the model architecture and privacy model immediately.",
+    suggestion: "Cover FunctionGemma finetuning, federated learning, encryption at rest/transit, and opt-out controls.",
+    cue_hint: "technical deep dive likely",
+    timestamp: 130, live: true,
   },
 ];
 
@@ -135,9 +137,9 @@ const MOCK_OBJECTION_CARDS: Omit<ObjectionCard, 'id'>[] = [
     difficulty: "warning",
   },
   {
-    question: "How do you ensure AI outputs don't create compliance liability?",
-    suggested_answer: "The tool surfaces items for human review — it doesn't make binding determinations. All outputs are framed as 'suggested review items' per our safe-use policy.",
-    persona: "Compliance Officer",
+    question: "What's the all-in cost over three years, and can you provide a reference customer with measurable ROI?",
+    suggested_answer: "Annual per-seat SaaS with no implementation fee. Design partners report 18% lift in first-call conversion and 40% reduction in manager coaching hours. I can connect you with two reference customers in enterprise SaaS.",
+    persona: "Procurement Manager",
     difficulty: "critical",
   },
 ];
@@ -182,7 +184,7 @@ export interface UseLiveSessionReturn {
   teleprompterPoints: string[];
   objections: ObjectionCard[];
   scriptSuggestions: ScriptSuggestion[];
-  startSession: (personas: PersonaConfig[], docFiles?: File[], sessionMode?: SessionMode, presentationMaterials?: File[]) => Promise<void>;
+  startSession: (personas: PersonaConfig[], docFiles?: File[], sessionMode?: SessionMode, presentationMaterials?: File[], agents?: AgentConfig[]) => Promise<void>;
   endSession: () => void;
   dismissNudge: (id: string) => void;
   dismissScriptSuggestion: (id: string) => void;
@@ -459,6 +461,7 @@ export function useLiveSession(): UseLiveSessionReturn {
     docFiles: File[] = [],
     sessionMode: SessionMode = 'live',
     presentationMaterials: File[] = [],
+    agents: AgentConfig[] = [],
   ) => {
     setState('requesting_permissions');
 
@@ -505,6 +508,7 @@ export function useLiveSession(): UseLiveSessionReturn {
         type: 'init',
         mode: wsMode,
         personas: personas.filter((p) => p.enabled).map((p) => p.label),
+        enabled_agents: agents.filter((a) => a.enabled).map((a) => a.id),
         policy_text: policyText,
         presentation_text: presentationText,
         title: sessionMode === 'live_remote' ? 'Live Remote Session' : 'Live Rehearsal',
@@ -675,6 +679,7 @@ export function useLiveSession(): UseLiveSessionReturn {
     docFiles: File[] = [],
     sessionMode: SessionMode = 'live',
     presentationMaterials: File[] = [],
+    agents: AgentConfig[] = [],
   ) => {
     setError(null);
     setFindings([]);
@@ -694,7 +699,7 @@ export function useLiveSession(): UseLiveSessionReturn {
     if (USE_MOCK) {
       await startMockSession(personas, sessionMode);
     } else {
-      await startRealSession(personas, docFiles, sessionMode, presentationMaterials);
+      await startRealSession(personas, docFiles, sessionMode, presentationMaterials, agents);
     }
   }, [startMockSession, startRealSession]);
 

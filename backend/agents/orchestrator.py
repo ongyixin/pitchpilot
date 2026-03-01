@@ -140,8 +140,14 @@ class Orchestrator:
 
         result = OrchestratorResult(session_id=context.session_id)
 
-        claims = context.claims[:MAX_CLAIMS_PER_SESSION]
+        claim_cap = min(MAX_CLAIMS_PER_SESSION, 5) if settings.fast_mode else MAX_CLAIMS_PER_SESSION
+        claims = context.claims[:claim_cap]
         result.claims_processed = len(claims)
+        if settings.fast_mode and len(context.claims) > claim_cap:
+            logger.info(
+                f"[orchestrator] fast_mode: capped claims {len(context.claims)} → {claim_cap} "
+                "for agent dispatch"
+            )
 
         # ------------------------------------------------------------------
         # Step 1: Route all claims
@@ -178,55 +184,84 @@ class Orchestrator:
         agents_run: set[str] = set()
 
         async def run_coach() -> list[Finding]:
+            if "coach" not in context.enabled_agents:
+                return []
             if not coach_claims and not context.full_transcript:
                 return []
             agents_run.add("coach")
-            if progress_callback:
-                await _async_progress(progress_callback, 92, "Coach agent (5/7)")
             async with StageTimer("agent_coach", metrics) as t:
                 if coach_claims:
                     result_list = await self._coach.analyze_batch(context, coach_claims)
                 else:
                     result_list = await self._coach.analyze(context)
                 t.item_count = len(result_list)
+            if progress_callback:
+                await _async_progress(progress_callback, 92, "Coach agent complete (5/7)")
             return result_list
 
         async def run_compliance() -> list[Finding]:
-            if not compliance_claims and not context.policy_text:
+            if "compliance" not in context.enabled_agents:
+                return []
+            # Compliance agent only runs when the user uploaded policy docs.
+            # Uploading a policy document is the explicit "enable compliance checking" signal;
+            # without it there is nothing to check claims against and the agent should stay silent.
+            if not context.policy_text:
+                return []
+            if not compliance_claims:
                 return []
             agents_run.add("compliance")
-            if progress_callback:
-                await _async_progress(progress_callback, 94, "Compliance agent (6/7)")
             async with StageTimer("agent_compliance", metrics) as t:
                 if compliance_claims:
                     result_list = await self._compliance.analyze_batch(context, compliance_claims)
                 else:
                     result_list = await self._compliance.analyze(context)
                 t.item_count = len(result_list)
+            if progress_callback:
+                await _async_progress(progress_callback, 94, "Compliance agent complete (6/7)")
             return result_list
 
         async def run_persona() -> list[Finding]:
-            # Skip persona in fast mode
+            if "persona" not in context.enabled_agents:
+                return []
+            # Skip persona in fast mode or when the user enabled no personas
             if settings.fast_mode:
+                return []
+            if not context.personas:
                 return []
             if not persona_claims:
                 if not context.full_transcript:
                     return []
             agents_run.add("persona")
-            if progress_callback:
-                await _async_progress(progress_callback, 96, "Persona agent (7/7)")
             async with StageTimer("agent_persona", metrics) as t:
                 if persona_claims:
                     result_list = await self._persona.analyze_batch(context, persona_claims[:5])
                 else:
                     result_list = await self._persona.analyze(context)
                 t.item_count = len(result_list)
+            if progress_callback:
+                await _async_progress(progress_callback, 96, "Persona agent complete (7/7)")
             return result_list
 
+        # Each agent gets an overall budget: per-call timeout × claim count + fixed overhead.
+        # This is a hard backstop so a hung LLM can't stall dedup + report indefinitely.
+        _per_call = settings.agent_per_call_timeout_seconds
+        _coach_budget = _per_call * max(len(coach_claims), 1) + 10
+        _compliance_budget = _per_call * max(len(compliance_claims), 1) + 10
+        _persona_budget = _per_call * max(len(persona_claims), 1) + 10
+
+        async def _with_timeout(coro, budget: float, label: str):
+            try:
+                return await asyncio.wait_for(coro, timeout=budget)
+            except asyncio.TimeoutError:
+                logger.warning(
+                    f"[orchestrator] {label} agent timed out after {budget:.0f}s — skipping"
+                )
+                return []
+
         coach_findings, compliance_findings, persona_findings = await asyncio.gather(
-            run_coach(),
-            run_compliance(),
-            run_persona(),
+            _with_timeout(run_coach(), _coach_budget, "coach"),
+            _with_timeout(run_compliance(), _compliance_budget, "compliance"),
+            _with_timeout(run_persona(), _persona_budget, "persona"),
             return_exceptions=True,
         )
 
@@ -338,10 +373,18 @@ def _build_timeline(findings: list[Finding]) -> list[TimelineAnnotation]:
     for f in findings:
         if f.timestamp is None:
             continue
+        
+        # Normalize timestamp to float (handles both str and float from LLM responses)
+        try:
+            timestamp_float = float(f.timestamp) if isinstance(f.timestamp, str) else f.timestamp
+        except (ValueError, TypeError):
+            # Skip invalid timestamps
+            continue
+        
         color = CATEGORY_COLOR.get(f.category, CATEGORY_COLOR.get(f.agent, "blue"))
         annotations.append(
             TimelineAnnotation(
-                timestamp=f.timestamp,
+                timestamp=timestamp_float,
                 category=f.category,
                 color=color,
                 label=f.title[:50],

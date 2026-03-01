@@ -119,11 +119,24 @@ class BaseAgent(ABC):
 
         try:
             import json as _json
-            raw_str = await self._client.generate(
-                prompt=prompt,
-                system=self.system_prompt,
-                response_format="json",
-            )
+            timeout = settings.agent_per_call_timeout_seconds
+            try:
+                raw_str = await asyncio.wait_for(
+                    self._client.generate(
+                        prompt=prompt,
+                        system=self.system_prompt,
+                        response_format="json",
+                        max_tokens=640,
+                    ),
+                    timeout=timeout,
+                )
+            except asyncio.TimeoutError:
+                logger.warning(
+                    f"{self.name} LLM call timed out after {timeout:.0f}s "
+                    f"(claim={claim.id if claim else 'full'}) — using mock findings"
+                )
+                return self.mock_findings(context, claim)
+
             try:
                 raw = _json.loads(raw_str)
             except _json.JSONDecodeError:
@@ -193,3 +206,15 @@ class BaseAgent(ABC):
         if s in ("warning", "warn", "medium"):
             return "warning"
         return "info"
+
+    @staticmethod
+    def _parse_timestamp(v: object) -> Optional[float]:
+        """Coerce a model-returned timestamp to float, tolerating an 's' suffix."""
+        if v is None:
+            return None
+        if isinstance(v, (int, float)):
+            return float(v)
+        try:
+            return float(str(v).rstrip("s"))
+        except (ValueError, TypeError):
+            return None
