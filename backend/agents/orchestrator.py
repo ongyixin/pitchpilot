@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from dataclasses import dataclass, field
 from typing import Callable, Optional
 
@@ -90,6 +91,17 @@ class Orchestrator:
 
         self._initialized = False
 
+        # Lazy semaphore: bounds the number of simultaneous run_claim() dispatches
+        # in live mode.  Created on first async use so __init__ stays synchronous.
+        self._claim_semaphore: Optional[asyncio.Semaphore] = None
+
+    @property
+    def _claim_gate(self) -> asyncio.Semaphore:
+        """Lazily-created semaphore that caps concurrent run_claim() calls."""
+        if self._claim_semaphore is None:
+            self._claim_semaphore = asyncio.Semaphore(settings.agent_concurrency)
+        return self._claim_semaphore
+
     async def initialize(self) -> None:
         """Probe Ollama and load the router. Call once at startup."""
         if self._initialized:
@@ -153,7 +165,13 @@ class Orchestrator:
         # Step 1: Route all claims
         # ------------------------------------------------------------------
         async with StageTimer("routing", metrics) as t:
-            router_outputs = self._router.route_batch(claims)
+            # Rule-based routing is pure Python and fast; run inline.
+            # Model-based routing does GPU inference; offload to a thread so
+            # it doesn't block the event loop while the batch is processed.
+            if self._router._use_rules:
+                router_outputs = self._router.route_batch(claims)
+            else:
+                router_outputs = await asyncio.to_thread(self._router.route_batch, claims)
             t.item_count = len(router_outputs)
         result.router_outputs = router_outputs
 
@@ -305,40 +323,56 @@ class Orchestrator:
 
     async def run_claim(self, context: PipelineContext, claim: Claim) -> list[Finding]:
         """
-        Process a single claim. Useful for streaming/live mode where claims
-        arrive one at a time.
+        Process a single claim in live mode.
+
+        A shared semaphore (agent_concurrency slots) caps the number of
+        simultaneous run_claim dispatches so the Ollama GPU queue never
+        exceeds its optimal depth even when multiple claims arrive in one
+        extraction cycle.
         """
         if not self._initialized:
             await self.initialize()
 
-        ro = self._router.route(claim)
-        fn_names = {tc.function_name for tc in ro.tool_calls}
+        async with self._claim_gate:
+            if self._router._use_rules:
+                ro = self._router.route(claim)
+            else:
+                ro = await asyncio.to_thread(self._router.route, claim)
 
-        tasks: list[asyncio.Task] = []
+            fn_names = {tc.function_name for tc in ro.tool_calls}
 
-        async def _safe(coro):
-            try:
-                return await coro
-            except Exception as e:
-                logger.error(f"Claim dispatch error: {e}")
+            async def _safe(coro):
+                try:
+                    return await coro
+                except Exception as e:
+                    logger.error(f"Claim dispatch error: {e}")
+                    return []
+
+            tasks: list[asyncio.Task] = []
+
+            if "coach_presentation" in fn_names:
+                tasks.append(asyncio.create_task(_safe(self._coach.analyze(context, claim))))
+            if "check_compliance" in fn_names:
+                tasks.append(asyncio.create_task(_safe(self._compliance.analyze(context, claim))))
+            # Persona generates 3× LLM calls (one per persona).  In live mode
+            # only dispatch it when the claim has enough confidence to justify
+            # the cost; the PersonaAgent.min_confidence gate handles this too,
+            # but checking here avoids creating the task at all.
+            if "simulate_persona" in fn_names and not settings.fast_mode:
+                if claim.confidence >= self._persona.min_confidence:
+                    tasks.append(asyncio.create_task(_safe(self._persona.analyze(context, claim))))
+
+            if not tasks:
                 return []
 
-        if "coach_presentation" in fn_names:
-            tasks.append(asyncio.create_task(_safe(self._coach.analyze(context, claim))))
-        if "check_compliance" in fn_names:
-            tasks.append(asyncio.create_task(_safe(self._compliance.analyze(context, claim))))
-        if "simulate_persona" in fn_names:
-            tasks.append(asyncio.create_task(_safe(self._persona.analyze(context, claim))))
-
-        if not tasks:
-            return []
-
-        results = await asyncio.gather(*tasks)
-        findings: list[Finding] = []
-        for r in results:
-            if isinstance(r, list):
-                findings.extend(r)
-        return findings
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            findings: list[Finding] = []
+            for r in results:
+                if isinstance(r, list):
+                    findings.extend(r)
+                elif isinstance(r, Exception):
+                    logger.error(f"run_claim agent exception: {r}")
+            return findings
 
 
 # ---------------------------------------------------------------------------
@@ -356,14 +390,39 @@ async def _async_progress(callback: Optional[ProgressCallback], pct: int, messag
 
 
 def _deduplicate_findings(findings: list[Finding]) -> list[Finding]:
-    """Remove duplicate findings based on (agent, title) key."""
-    seen: set[tuple[str, str]] = set()
+    """
+    Remove near-duplicate findings using Jaccard token overlap on titles.
+
+    Two findings from the same agent whose titles share ≥60% of tokens are
+    considered duplicates; the higher-severity copy is kept.  Exact-match
+    duplicates are caught as a special case (Jaccard = 1.0).
+
+    Processing order: critical → warning → info so the most important finding
+    survives when a pair is deduplicated.
+    """
+    def _tokens(text: str) -> frozenset[str]:
+        return frozenset(re.sub(r"[^a-z0-9 ]", "", text.lower()).split())
+
+    _severity_rank: dict[str, int] = {"critical": 0, "warning": 1, "info": 2}
+    ordered = sorted(findings, key=lambda f: _severity_rank.get(f.severity, 2))
+
     unique: list[Finding] = []
-    for f in findings:
-        key = (f.agent, f.title.strip().lower())
-        if key not in seen:
-            seen.add(key)
+    unique_token_keys: list[tuple[str, frozenset[str]]] = []  # (agent, title_tokens)
+
+    for f in ordered:
+        f_toks = _tokens(f.title)
+        is_dup = False
+        for agent, ex_toks in unique_token_keys:
+            if agent != f.agent:
+                continue
+            union = f_toks | ex_toks
+            if union and len(f_toks & ex_toks) / len(union) >= 0.6:
+                is_dup = True
+                break
+        if not is_dup:
             unique.append(f)
+            unique_token_keys.append((f.agent, f_toks))
+
     return unique
 
 

@@ -114,138 +114,126 @@ def _load_persisted_sessions() -> None:
 # ---------------------------------------------------------------------------
 
 def _mock_claims() -> list[Claim]:
+    # Matches the PitchPilot demo pitch that drives the mock findings below.
     return [
         Claim(
-            text="Our platform is fully automated — no manual review required.",
-            claim_type=ClaimType.FEATURE,
-            timestamp=34.5,
+            text="PitchPilot is fully private and never sends data to the cloud.",
+            claim_type=ClaimType.PRIVACY,
+            timestamp=154.0,
             source="transcript",
             confidence=0.93,
         ),
         Claim(
-            text="We achieve 99.9% uptime across all enterprise tiers.",
-            claim_type=ClaimType.METRIC,
-            timestamp=72.0,
-            source="slide",
-            slide_number=4,
-            confidence=0.88,
-        ),
-        Claim(
-            text="All customer data is stored exclusively on-device — nothing leaves your network.",
-            claim_type=ClaimType.PRIVACY,
-            timestamp=112.0,
+            text="Our workflow is fully automated — no manual review required.",
+            claim_type=ClaimType.FEATURE,
+            timestamp=251.0,
             source="both",
-            slide_number=6,
             confidence=0.91,
         ),
         Claim(
-            text="We outperform every competitor by 3× on inference speed.",
-            claim_type=ClaimType.COMPARISON,
-            timestamp=155.0,
+            text="We achieved a 3x close rate improvement across all pilot customers.",
+            claim_type=ClaimType.METRIC,
+            timestamp=320.0,
             source="transcript",
-            confidence=0.80,
+            confidence=0.85,
         ),
     ]
 
 
 def _mock_findings(claims: list[Claim]) -> list[Finding]:
-    claim_automated = claims[0]
-    claim_uptime = claims[1]
-    claim_privacy = claims[2]
-    claim_speed = claims[3]
-
+    # Kept in timestamp order to match the frontend MOCK_REPORT in mock-data.ts.
     return [
         Finding(
             agent=AgentType.COACH,
-            severity=Severity.WARNING,
-            title="Abrupt transition after problem statement",
-            detail=(
-                "The transition from the problem slide to the demo felt rushed. "
-                "There was no bridge sentence to orient the audience before the "
-                "product walkthrough began."
-            ),
-            suggestion="Add a one-sentence recap: 'That's the problem — here's how PitchPilot solves it.'",
-            timestamp=28.0,
-        ),
-        Finding(
-            agent=AgentType.COACH,
             severity=Severity.INFO,
-            title="Strong opening hook",
-            detail="The opening anecdote about a failed product demo was vivid and relatable. It established stakes immediately.",
-            timestamp=5.0,
+            title="Strong problem statement — preserve this opening",
+            detail=(
+                'Your first 45 seconds are excellent. The "pitch rehearsal is a black box" '
+                "hook is memorable and clearly frames the gap."
+            ),
+            timestamp=12.0,
         ),
         Finding(
             agent=AgentType.COACH,
-            severity=Severity.CRITICAL,
-            title="Speed metric lacks benchmark context",
-            detail=(
-                "'3× faster' is compelling but the baseline is never stated. "
-                "Sophisticated audiences will dismiss unanchored comparisons."
-            ),
-            suggestion="Name the competitor and link to a reproducible benchmark.",
-            timestamp=155.0,
-            claim_id=claim_speed.id,
-        ),
-        Finding(
-            agent=AgentType.COMPLIANCE,
-            severity=Severity.CRITICAL,
-            title="'Fully automated' conflicts with policy §3.2",
-            detail=(
-                "Your enterprise data-handling policy (section 3.2) requires human review "
-                "for model outputs above a confidence threshold of 0.95. "
-                "Claiming 'fully automated — no manual review required' directly contradicts this."
-            ),
-            suggestion="Rephrase to: 'Automated with optional human-in-the-loop review for high-stakes decisions.'",
-            timestamp=34.5,
-            claim_id=claim_automated.id,
-            policy_reference="Enterprise Data Policy §3.2 — Human Oversight Requirement",
-        ),
-        Finding(
-            agent=AgentType.COMPLIANCE,
             severity=Severity.WARNING,
-            title="99.9% uptime SLA not in standard contract",
+            title="Solution slide overloaded with technical jargon",
             detail=(
-                "The standard enterprise contract offers 99.5% SLA. "
-                "Promising 99.9% creates a potential contractual liability."
+                'Slide 3 uses "multi-agent orchestration," "LoRA fine-tuning," and '
+                '"tokenized function dispatch" without explanation. Non-technical audiences will disengage.'
             ),
-            suggestion="Reference the premium-tier SLA or say 'up to 99.9%' with a footnote.",
-            timestamp=72.0,
-            claim_id=claim_uptime.id,
-            policy_reference="SLA Addendum v2 — Enterprise Standard Tier",
+            suggestion='Lead with the outcome ("analyzes your pitch in 90 seconds") before explaining the mechanism.',
+            timestamp=118.0,
         ),
         Finding(
             agent=AgentType.COMPLIANCE,
-            severity=Severity.WARNING,
-            title="'Nothing leaves your network' needs qualification",
+            severity=Severity.CRITICAL,
+            title='"Fully private" conflicts with policy §4.1',
             detail=(
-                "Architecture slide 8 shows an optional cloud-sync feature. "
-                "The blanket privacy claim may be technically false for customers who enable it."
+                'At 2:34 you stated the product is "fully private and never sends data to the cloud." '
+                "Policy §4.1 requires disclosure of optional cloud fallback mode."
             ),
-            suggestion="Add 'by default' and mention the opt-in cloud sync explicitly.",
-            timestamp=112.0,
-            claim_id=claim_privacy.id,
-            policy_reference="Privacy Disclosure Policy §1.1 — Accurate Representation",
+            suggestion=(
+                'Change to: "Private by default — all processing runs on-device. '
+                'An optional cloud mode is available for users who opt in."'
+            ),
+            timestamp=154.0,
+            claim_id=claims[0].id,
+            policy_reference="Enterprise Data Policy §4.1",
+        ),
+        Finding(
+            agent=AgentType.PERSONA,
+            severity=Severity.INFO,
+            title='Technical Reviewer: On-device inference latency?',
+            detail="Technical Reviewer wants specifics on inference latency for the 90-second claim.",
+            suggestion='Have concrete benchmarks ready: "On an M2 MacBook Pro: 90s for a 5-minute video, 4.2s/frame OCR, real-time audio."',
+            timestamp=198.0,
+            persona="Technical Reviewer",
+        ),
+        Finding(
+            agent=AgentType.COACH,
+            severity=Severity.WARNING,
+            title="Abrupt demo-to-business-model transition at 3:42",
+            detail=(
+                "The transition from the live demo to the business model is jarring. "
+                "There is no bridging sentence, causing the audience to mentally context-switch without framing."
+            ),
+            suggestion="Add: \"What you just saw is the core product. Here's how we monetize it.\" before advancing the slide.",
+            timestamp=222.0,
+        ),
+        Finding(
+            agent=AgentType.COMPLIANCE,
+            severity=Severity.CRITICAL,
+            title='"Fully automated" conflicts with policy §3.2',
+            detail=(
+                'At 4:11 you claimed the workflow is "fully automated." '
+                "Policy §3.2 mandates that edge cases require manual human review."
+            ),
+            suggestion='Replace with: "Automated for 95% of standard cases; edge cases are flagged for manual review per our policy."',
+            timestamp=251.0,
+            claim_id=claims[1].id,
+            policy_reference="Enterprise Data Policy §3.2",
         ),
         Finding(
             agent=AgentType.PERSONA,
             severity=Severity.WARNING,
-            title="Skeptical Investor: differentiation is unclear",
+            title='Skeptical Investor: "Why not just use ChatGPT?"',
             detail=(
-                "A skeptical investor would immediately ask how this differs from a "
-                "well-prompted ChatGPT plus screen recording. The on-device angle is "
-                "the key differentiator but it was mentioned only once, in passing."
+                "This question arose from generic AI differentiation framing on the traction slide. "
+                "The on-device angle has not been emphasised strongly enough."
             ),
-            suggestion="Lead with the on-device / privacy differentiator earlier and repeat at close.",
-            timestamp=90.0,
+            suggestion='Prepare: "ChatGPT requires sending your pitch to the cloud. PitchPilot runs on-device with specialized models for each evaluation task."',
+            timestamp=298.0,
             persona="Skeptical Investor",
         ),
         Finding(
-            agent=AgentType.PERSONA,
-            severity=Severity.INFO,
-            title="Technical Reviewer: model card details appreciated",
-            detail="The Technical Reviewer persona found the mention of specific model names (Gemma 3n, FunctionGemma) credible and reassuring.",
-            timestamp=130.0,
-            persona="Technical Reviewer",
+            agent=AgentType.COMPLIANCE,
+            severity=Severity.WARNING,
+            title="ROI claim lacks supporting data",
+            detail='At 5:20 you claimed "3x close rate improvement" without citing a source or pilot data.',
+            suggestion='Add source: cite pilot customer or qualify as "hypothesis to be validated in pilot."',
+            timestamp=320.0,
+            claim_id=claims[2].id,
+            policy_reference="See traction slide",
         ),
     ]
 
@@ -254,53 +242,84 @@ def _mock_persona_questions() -> list[PersonaQuestion]:
     return [
         PersonaQuestion(
             persona="Skeptical Investor",
-            question="How is this different from asking ChatGPT to review my slide deck?",
-            follow_up="And if the answer is 'on-device', why can't a compliance-aware wrapper around GPT-4o do the same thing?",
-            timestamp=90.0,
+            question="How is this meaningfully different from asking ChatGPT to review my pitch script?",
+            follow_up=(
+                "Three key differences: on-device privacy (no data leaves the machine), "
+                "multimodal analysis (video + slides + audio, not just text), and specialized "
+                "models fine-tuned for pitch evaluation rather than general conversation."
+            ),
+            timestamp=298.0,
             difficulty=Severity.CRITICAL,
         ),
         PersonaQuestion(
             persona="Skeptical Investor",
-            question="What does '3× faster' mean, and is there a published benchmark?",
-            timestamp=155.0,
-            difficulty=Severity.WARNING,
-        ),
-        PersonaQuestion(
-            persona="Procurement Manager",
-            question="What's the all-in cost over three years, including implementation and training?",
-            timestamp=112.0,
-            difficulty=Severity.CRITICAL,
-        ),
-        PersonaQuestion(
-            persona="Procurement Manager",
-            question="How does this integrate with our existing CRM and sales enablement stack?",
+            question="What is your go-to-market strategy and why will enterprise sales teams adopt this?",
+            follow_up=(
+                "Focus on compliance-sensitive industries (fintech, healthcare) where "
+                "on-device is a requirement, not a feature."
+            ),
             difficulty=Severity.WARNING,
         ),
         PersonaQuestion(
             persona="Technical Reviewer",
-            question="What happens when Gemma 3n hallucinates during OCR — is there a confidence threshold?",
-            timestamp=50.0,
+            question="What is the actual end-to-end latency on consumer hardware? Have you measured it?",
+            follow_up="M2 MacBook Pro: 87s for a 5-min video. M1: ~2min. Windows with CUDA: ~45s.",
+            timestamp=198.0,
             difficulty=Severity.WARNING,
+        ),
+        PersonaQuestion(
+            persona="Procurement Manager",
+            question="What's the all-in cost over three years, and do you have a reference customer with measurable ROI?",
+            follow_up=(
+                "Annual per-seat SaaS with no implementation fee. Design partners report 18% lift "
+                "in first-call conversion and 40% fewer manager coaching hours. Happy to connect "
+                "you with two reference customers."
+            ),
+            difficulty=Severity.CRITICAL,
+        ),
+        PersonaQuestion(
+            persona="Technical Reviewer",
+            question="Why FunctionGemma for routing instead of a simpler classifier?",
+            follow_up=(
+                "FunctionGemma was designed specifically for function dispatch with structured output. "
+                "A classifier would require separate handling of argument extraction."
+            ),
+            difficulty=Severity.INFO,
         ),
     ]
 
 
 def _mock_report(session_id: str, claims: list[Claim], findings: list[Finding]) -> ReadinessReport:
     dimensions = [
-        DimensionScore(dimension="Clarity", score=78, rationale="Structure and flow are solid but two transitions need bridging."),
-        DimensionScore(dimension="Compliance", score=61, rationale="Two critical policy conflicts found; addressable with rewording."),
-        DimensionScore(dimension="Defensibility", score=68, rationale="Speed and uptime claims need benchmark citations."),
-        DimensionScore(dimension="Persuasiveness", score=82, rationale="Opening hook and model specificity are strong trust signals."),
+        DimensionScore(
+            dimension="Clarity",
+            score=78,
+            rationale="Clear problem statement; solution slides are dense with jargon.",
+        ),
+        DimensionScore(
+            dimension="Compliance",
+            score=61,
+            rationale='Two claims directly conflict with policy doc. "Fully automated" and "fully private" need qualification.',
+        ),
+        DimensionScore(
+            dimension="Defensibility",
+            score=74,
+            rationale="Investor persona questions are answerable but require better data. Technical objections are solid.",
+        ),
+        DimensionScore(
+            dimension="Persuasiveness",
+            score=81,
+            rationale="Strong open and close. Demo transition at 3:42 is rough — tighten the segue.",
+        ),
     ]
-    overall = round(sum(d.score for d in dimensions) / len(dimensions))
     score = ReadinessScore(
-        overall=overall,
+        overall=72,
         dimensions=dimensions,
         priority_fixes=[
-            "Fix the 'fully automated' claim — it directly contradicts Enterprise Data Policy §3.2.",
-            "Anchor the '3× faster' metric to a named competitor and public benchmark.",
-            "Qualify the privacy claim: add 'by default' to cover the opt-in cloud sync.",
-            "Add a bridge sentence between the problem slide and the demo.",
+            'Qualify the "fully private" claim on slide 4: add "by default" or "when configured with on-device mode".',
+            'Replace "fully automated" with "automated for standard cases, with optional manual review for edge cases" to align with policy §3.2.',
+            "Add a one-sentence bridge between the live demo and the business model slide (currently jumps too abruptly at 3:42).",
+            'Prepare a crisp ≤30-second answer to "How is this different from just using ChatGPT?"',
         ],
     )
     return ReadinessReport(
@@ -310,10 +329,10 @@ def _mock_report(session_id: str, claims: list[Claim], findings: list[Finding]) 
         persona_questions=_mock_persona_questions(),
         claims=claims,
         summary=(
-            "Overall readiness is 72/100. The pitch has a strong hook and credible technical "
-            "specificity, but two compliance conflicts need resolution before presenting to "
-            "an enterprise buyer. The privacy and automation claims are the highest-risk items. "
-            "Prepare for the ChatGPT differentiation question — it will come from every audience."
+            "Your pitch has strong narrative momentum and clear problem framing. "
+            "The main risks are an overreaching privacy claim on slide 4 and an abrupt transition "
+            "from the demo to the business model. The skeptical investor persona surfaces the "
+            "sharpest questions — prepare those answers before your next rehearsal."
         ),
         created_at=datetime.now(timezone.utc).isoformat(),
     )

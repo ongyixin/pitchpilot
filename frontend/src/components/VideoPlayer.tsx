@@ -50,6 +50,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(
           ref={videoRef}
           src={src}
           controls
+          preload="auto"
           className={className ?? 'w-full bg-black aspect-video border-2 border-bg-border'}
           onTimeUpdate={(e) => onTimeUpdate?.(e.currentTarget.currentTime)}
         />

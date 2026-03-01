@@ -18,7 +18,6 @@ from __future__ import annotations
 import asyncio
 import base64
 import re
-import subprocess
 import tempfile
 from pathlib import Path
 from typing import Optional
@@ -49,26 +48,46 @@ def _load_clip(slug: str) -> Optional[bytes]:
 async def _synthesize_system_tts(text: str) -> Optional[bytes]:
     """
     Synthesise short audio on macOS using the `say` command.
-    Writes to a temp WAV file and returns the bytes.
+    Outputs AIFF then converts to WAV via afconvert for cross-browser support.
     Falls back gracefully on non-macOS or if `say` is not available.
     """
+    aiff_path = ""
+    wav_path = ""
     try:
         with tempfile.NamedTemporaryFile(suffix=".aiff", delete=False) as tmp:
-            tmp_path = tmp.name
+            aiff_path = tmp.name
+        wav_path = aiff_path.replace(".aiff", ".wav")
 
         proc = await asyncio.create_subprocess_exec(
-            "say", "-r", "200", "-o", tmp_path, text,
+            "say", "-r", "200", "-o", aiff_path, text,
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.DEVNULL,
         )
         await asyncio.wait_for(proc.wait(), timeout=3.0)
 
-        data = Path(tmp_path).read_bytes()
-        Path(tmp_path).unlink(missing_ok=True)
+        # Convert AIFF → WAV (linear PCM) for universal browser decodeAudioData support
+        conv = await asyncio.create_subprocess_exec(
+            "afconvert", "-f", "WAVE", "-d", "LEI16@22050", aiff_path, wav_path,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        await asyncio.wait_for(conv.wait(), timeout=2.0)
+
+        data = Path(wav_path).read_bytes()
         return data
     except (FileNotFoundError, asyncio.TimeoutError, OSError) as exc:
+        # If afconvert fails, try returning the raw AIFF (Safari handles it)
+        if aiff_path and Path(aiff_path).exists():
+            try:
+                return Path(aiff_path).read_bytes()
+            except OSError:
+                pass
         logger.debug(f"[tts] system TTS failed: {exc}")
         return None
+    finally:
+        for p in (aiff_path, wav_path):
+            if p:
+                Path(p).unlink(missing_ok=True)
 
 
 # ---------------------------------------------------------------------------

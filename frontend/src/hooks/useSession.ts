@@ -37,12 +37,12 @@ export function useSession() {
         stopPolling();
         setReport(MOCK_REPORT as unknown as ReadinessReport);
         setTimeline((MOCK_TIMELINE ?? []) as unknown as TimelineAnnotation[]);
-        setTimeout(() => setView('results'), 600);
+        setTimeout(() => setView('results'), 150);
       } else if (step.status === 'error' || step.status === 'failed') {
         stopPolling();
         setError((step as unknown as Record<string, string>).error ?? 'Analysis failed.');
       }
-    }, 900);
+    }, 100);
   }, [stopPolling]);
 
   const startRealPolling = useCallback(
@@ -61,7 +61,7 @@ export function useSession() {
             ]);
             setReport(r);
             setTimeline(t.annotations);
-            setTimeout(() => setView('results'), 600);
+            setTimeout(() => setView('results'), 150);
           } else if (s.status === 'failed') {
             stopPolling();
             setError(s.error_message ?? 'Analysis failed.');
@@ -74,7 +74,7 @@ export function useSession() {
             setError(err instanceof Error ? err.message : 'Polling failed — is the backend running?');
           }
         }
-      }, 2000);
+      }, 500);
     },
     [stopPolling],
   );

@@ -102,8 +102,12 @@ from backend.services.tts import TTSService
 MSG_AUDIO = 0x01
 MSG_FRAME = 0x02
 
-# How often (seconds) to send objection prep updates in remote mode
-_OBJECTION_PREP_INTERVAL = 60.0
+# How often (seconds) to send objection prep updates in remote mode.
+# Falls back to a sane default if the config constant wasn't re-exported.
+try:
+    from backend.config import OBJECTION_PREP_UPDATE_INTERVAL as _OBJECTION_PREP_INTERVAL
+except ImportError:
+    _OBJECTION_PREP_INTERVAL = 30.0
 
 
 # ---------------------------------------------------------------------------
@@ -154,7 +158,14 @@ async def live_session_ws(websocket: WebSocket, sessions: dict) -> None:
             "live":       SessionMode.LIVE,
         }
         session_mode: SessionMode = mode_map.get(raw_mode, SessionMode.LIVE)
-        pipeline_mode = raw_mode if raw_mode in ("in_room", "remote") else "rehearsal"
+        # Normalise to the three values LivePipeline understands: "in_room", "remote", "rehearsal"
+        _pipeline_mode_map = {
+            "in_room":      "in_room",
+            "live_in_room": "in_room",
+            "remote":       "remote",
+            "live_remote":  "remote",
+        }
+        pipeline_mode = _pipeline_mode_map.get(raw_mode, "rehearsal")
 
         # Create session record
         session = Session(
@@ -209,6 +220,53 @@ async def live_session_ws(websocket: WebSocket, sessions: dict) -> None:
         last_teleprompter_at = start_wall
         last_objection_prep_at = start_wall
 
+        # Track in-flight extract_and_route to avoid overlapping calls
+        _extract_task: asyncio.Task | None = None
+        # Track in-flight transcription to avoid GPU contention / pile-up
+        _transcription_task: asyncio.Task | None = None
+
+        async def _run_extract_and_dispatch(at_elapsed: float) -> None:
+            """Run extract_and_route in the background so it never blocks
+            the WS receive loop (agent LLM calls can take 30+ seconds)."""
+            try:
+                findings = await pipeline.extract_and_route()
+                for f in findings:
+                    await _dispatch_finding(
+                        websocket, f, at_elapsed, synth, tts, pipeline, session_mode
+                    )
+            except Exception as exc:
+                logger.warning(f"[ws] Background extract failed: {exc}")
+
+        async def _run_transcription(audio_payload: bytes, offset: float, at_elapsed: float) -> None:
+            """Run transcription in the background so it never blocks the WS receive loop.
+            Gemma can take 30-40 s per 2-second chunk; awaiting it directly would freeze
+            the receive loop and cause the WebSocket to be closed by the client."""
+            try:
+                segments = await pipeline.ingest_audio_chunk(audio_payload, offset_seconds=offset)
+                if segments:
+                    await _send(websocket, {
+                        "type": "transcript_update",
+                        "segments": [
+                            {
+                                "text": s.text,
+                                "start_time": s.start_time,
+                                "end_time": s.end_time,
+                            }
+                            for s in segments
+                        ],
+                        "elapsed": at_elapsed,
+                    })
+            except Exception as exc:
+                logger.warning(f"[ws] Background transcription failed: {exc}")
+
+        # Remote mode: send initial teleprompter + objection prep within
+        # a few seconds so the presenter panel isn't empty on connect.
+        if session_mode == SessionMode.LIVE_REMOTE:
+            await _send_teleprompter(websocket, pipeline, 0.0)
+            last_teleprompter_at = time.monotonic()
+            await _send_objection_prep(websocket, pipeline, 0.0)
+            last_objection_prep_at = time.monotonic()
+
         # ------------------------------------------------------------------
         # Phase 2: Main message loop
         # ------------------------------------------------------------------
@@ -222,13 +280,12 @@ async def live_session_ws(websocket: WebSocket, sessions: dict) -> None:
                 now = time.monotonic()
                 elapsed = now - start_wall
 
-                # Periodic claim extraction + routing
+                # Periodic claim extraction + routing (non-blocking)
                 if now - last_extract_at >= extract_interval:
                     last_extract_at = now
-                    findings = await pipeline.extract_and_route()
-                    for f in findings:
-                        await _dispatch_finding(
-                            websocket, f, elapsed, synth, tts, pipeline, session_mode
+                    if _extract_task is None or _extract_task.done():
+                        _extract_task = asyncio.create_task(
+                            _run_extract_and_dispatch(elapsed)
                         )
 
                 # Remote-mode: periodic teleprompter updates
@@ -257,6 +314,11 @@ async def live_session_ws(websocket: WebSocket, sessions: dict) -> None:
 
                 if msg_type == "end_session":
                     logger.info(f"[ws] end_session received | session={session_id}")
+                    # Cancel any in-flight background tasks before finalizing
+                    if _extract_task and not _extract_task.done():
+                        _extract_task.cancel()
+                    if _transcription_task and not _transcription_task.done():
+                        _transcription_task.cancel()
                     await _handle_end_session(
                         websocket, session_id, pipeline, session, sessions
                     )
@@ -276,29 +338,26 @@ async def live_session_ws(websocket: WebSocket, sessions: dict) -> None:
                 elapsed = time.monotonic() - start_wall
 
                 if tag == MSG_AUDIO:
-                    segments = await pipeline.ingest_audio_chunk(payload, offset_seconds=elapsed)
-                    if segments:
-                        await _send(websocket, {
-                            "type": "transcript_update",
-                            "segments": [
-                                {
-                                    "text": s.text,
-                                    "start_time": s.start_time,
-                                    "end_time": s.end_time,
-                                }
-                                for s in segments
-                            ],
-                            "elapsed": elapsed,
-                        })
+                    chunk_start = max(0.0, elapsed - 2.0)
+                    # Transcription is non-blocking: Gemma takes ~30-40 s per 2-second
+                    # chunk, so awaiting it directly would freeze the receive loop and
+                    # cause the WebSocket to close before results can be delivered.
+                    # Only start a new transcription if the previous one has finished to
+                    # avoid GPU contention / unbounded task pile-up.
+                    if _transcription_task is None or _transcription_task.done():
+                        _transcription_task = asyncio.create_task(
+                            _run_transcription(payload, chunk_start, elapsed)
+                        )
+                    else:
+                        logger.debug("[ws] Skipping audio chunk — transcription still in progress")
 
-                    # Run extract + route if interval elapsed
+                    # Kick off extract + route if interval elapsed (non-blocking)
                     now = time.monotonic()
                     if now - last_extract_at >= extract_interval:
                         last_extract_at = now
-                        findings = await pipeline.extract_and_route()
-                        for f in findings:
-                            await _dispatch_finding(
-                                websocket, f, elapsed, synth, tts, pipeline, session_mode
+                        if _extract_task is None or _extract_task.done():
+                            _extract_task = asyncio.create_task(
+                                _run_extract_and_dispatch(elapsed)
                             )
 
                 elif tag == MSG_FRAME:

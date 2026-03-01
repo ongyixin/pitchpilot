@@ -33,6 +33,7 @@ export default function App() {
   const { view, sessionId, status, report, timeline, error, startAnalysis, startDemo, reset } = useSession();
   const liveSession = useLiveSession();
   const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [isDemoSession, setIsDemoSession] = useState(false);
   const [appMode, setAppMode] = useState<SessionMode>('upload');
   const [showLanding, setShowLanding] = useState(true);
   const [initialSetupMode, setInitialSetupMode] = useState<'review' | 'live_in_room' | 'live_remote'>('review');
@@ -55,7 +56,8 @@ export default function App() {
     reset();
     setAppMode('review');
     setInitialSetupMode('review');
-    setShowLanding(true);
+    setIsDemoSession(false);
+    setShowLanding(false); // Go to SetupPage (app launch page), not LandingPage
   };
 
   const handleBackToSetup = () => {
@@ -78,9 +80,14 @@ export default function App() {
     setShowLanding(false);
   };
 
+  const handleStartDemo = (personas: PersonaConfig[]) => {
+    setIsDemoSession(true);
+    startDemo(personas);
+  };
+
   const handleLandingDemo = () => {
     setShowLanding(false);
-    startDemo(DEMO_PERSONAS);
+    handleStartDemo(DEMO_PERSONAS);
   };
 
   // ── Landing page ──
@@ -209,7 +216,7 @@ export default function App() {
 
   // ── Review / upload mode routing ──
   if (view === 'setup') {
-    return <SetupPage onStart={handleStart} onStartDemo={startDemo} onHome={handleHome} initialMode={initialSetupMode} />;
+    return <SetupPage onStart={handleStart} onStartDemo={handleStartDemo} onHome={handleHome} initialMode={initialSetupMode} />;
   }
 
   if (view === 'analyzing') {
@@ -222,11 +229,12 @@ export default function App() {
         report={report}
         sessionId={sessionId ?? 'unknown'}
         videoFile={videoFile ?? undefined}
+        videoSrc={isDemoSession ? '/demo-video.mov' : undefined}
         timeline={timeline}
         onReset={handleReset}
       />
     );
   }
 
-  return <SetupPage onStart={handleStart} onStartDemo={startDemo} onHome={handleHome} initialMode={initialSetupMode} />;
+  return <SetupPage onStart={handleStart} onStartDemo={handleStartDemo} onHome={handleHome} initialMode={initialSetupMode} />;
 }

@@ -67,7 +67,7 @@ app.add_middleware(
 _sessions: dict[UUID, Session] = {}
 
 # Demo delay between pipeline stages (seconds); 0 = instant results
-_STAGE_DELAY: float = float(os.getenv("PITCHPILOT_DEMO_DELAY", "1.5"))
+_STAGE_DELAY: float = float(os.getenv("PITCHPILOT_DEMO_DELAY", "0.5"))
 
 
 # ---------------------------------------------------------------------------
@@ -76,169 +76,126 @@ _STAGE_DELAY: float = float(os.getenv("PITCHPILOT_DEMO_DELAY", "1.5"))
 
 
 def _demo_claims() -> list[Claim]:
+    # Matches the PitchPilot demo pitch described in the frontend MOCK_REPORT.
     return [
         Claim(
-            text="PitchPilot analyzes your pitch in 90 seconds — fully automated, no manual review required.",
-            claim_type=ClaimType.FEATURE,
-            timestamp=34.5,
+            text="PitchPilot is fully private and never sends data to the cloud.",
+            claim_type=ClaimType.PRIVACY,
+            timestamp=23.0,
             source="transcript",
             confidence=0.93,
         ),
         Claim(
-            text="PitchPilot runs entirely on-device — your pitch data never leaves your computer.",
-            claim_type=ClaimType.PRIVACY,
-            timestamp=72.0,
-            source="slide",
-            slide_number=4,
-            confidence=0.88,
-        ),
-        Claim(
-            text="We use Gemma 3n and FunctionGemma — state-of-the-art on-device AI models.",
+            text="Our workflow is fully automated — no manual review required.",
             claim_type=ClaimType.FEATURE,
-            timestamp=112.0,
+            timestamp=37.0,
             source="both",
-            slide_number=6,
             confidence=0.91,
         ),
         Claim(
-            text="PitchPilot provides real-time coaching cues during live presentations.",
-            claim_type=ClaimType.FEATURE,
-            timestamp=155.0,
+            text="We achieved a 3x close rate improvement across all pilot customers.",
+            claim_type=ClaimType.METRIC,
+            timestamp=47.0,
             source="transcript",
-            confidence=0.80,
+            confidence=0.85,
         ),
     ]
 
 
 def _demo_findings(claims: list[Claim]) -> list[Finding]:
-    claim_automated = claims[0]
-    claim_uptime = claims[1]
-    claim_privacy = claims[2]
-    claim_speed = claims[3]
-
+    # Mirrors REVIEW_FINDINGS in frontend/src/lib/mock-data.ts — keep in sync.
     return [
-        # Coach findings
-        Finding(
-            agent=AgentType.COACH,
-            severity=Severity.WARNING,
-            title="Abrupt transition after problem statement",
-            detail=(
-                "The transition from the problem slide to the PitchPilot demo felt rushed. "
-                "There was no bridge sentence to orient the audience before the "
-                "product walkthrough began."
-            ),
-            suggestion="Add a one-sentence recap: 'That's the problem — here's how PitchPilot solves it.'",
-            timestamp=28.0,
-        ),
         Finding(
             agent=AgentType.COACH,
             severity=Severity.INFO,
-            title="Strong opening hook",
-            detail="The opening anecdote about a failed pitch rehearsal was vivid and relatable. It established the problem PitchPilot solves immediately.",
-            suggestion=None,
-            timestamp=5.0,
-        ),
-        Finding(
-            agent=AgentType.COACH,
-            severity=Severity.CRITICAL,
-            title="Real-time coaching feature needs demonstration",
+            title="Strong problem statement — preserve this opening",
             detail=(
-                "The claim about 'real-time coaching cues' is compelling but wasn't demonstrated. "
-                "Audiences need to see how PitchPilot's coaching works in practice."
+                'Your opening is excellent. The "pitch rehearsal is a black box" '
+                "hook is memorable and clearly frames the gap."
             ),
-            suggestion="Add a live demo or video showing PitchPilot's earpiece cues during a presentation, or at least show a screenshot of the overlay interface.",
-            timestamp=155.0,
-            claim_id=claim_speed.id,
+            timestamp=2.0,
         ),
         Finding(
             agent=AgentType.COACH,
             severity=Severity.WARNING,
-            title="Solution slide overloaded with jargon",
+            title="Solution slide overloaded with technical jargon",
             detail=(
-                "Slide 3 uses 'multi-agent orchestration', 'LoRA fine-tuning', and "
-                "'tokenised function dispatch' without explanation. Non-technical audiences disengage."
+                'Slide 3 uses "multi-agent orchestration," "LoRA fine-tuning," and '
+                '"tokenized function dispatch" without explanation. Non-technical audiences will disengage.'
             ),
-            suggestion="Lead with the outcome ('PitchPilot analyzes your pitch in 90 seconds') before explaining the mechanism.",
-            timestamp=118.0,
+            suggestion='Lead with the outcome ("analyzes your pitch in 90 seconds") before explaining the mechanism.',
+            timestamp=17.0,
         ),
-        # Compliance findings
         Finding(
             agent=AgentType.COMPLIANCE,
             severity=Severity.CRITICAL,
-            title="'Fully automated' conflicts with policy §3.2",
+            title='"Fully private" conflicts with policy §4.1',
             detail=(
-                "Your enterprise data-handling policy (section 3.2) requires human review "
-                "for model outputs above a confidence threshold of 0.95. "
-                "Claiming PitchPilot is 'fully automated — no manual review required' directly contradicts this."
+                'At 0:23 you stated the product is "fully private and never sends data to the cloud." '
+                "Policy §4.1 requires disclosure of optional cloud fallback mode."
             ),
-            suggestion="Rephrase to: 'PitchPilot is automated with optional human-in-the-loop review for high-stakes decisions.'",
-            timestamp=34.5,
-            claim_id=claim_automated.id,
-            policy_reference="Enterprise Data Policy §3.2 — Human Oversight Requirement",
-        ),
-        Finding(
-            agent=AgentType.COMPLIANCE,
-            severity=Severity.WARNING,
-            title="'Never leaves your computer' claim needs technical clarification",
-            detail=(
-                "The claim that 'pitch data never leaves your computer' is strong but needs clarification "
-                "about how PitchPilot processes data locally. Does this include model inference, or just storage?"
+            suggestion=(
+                'Change to: "Private by default — all processing runs on-device. '
+                'An optional cloud mode is available for users who opt in."'
             ),
-            suggestion="Clarify: 'All pitch analysis runs locally on your device. No video or transcript data is sent to external servers.'",
-            timestamp=72.0,
-            claim_id=claim_uptime.id,
-            policy_reference="Privacy Disclosure Policy §1.1 — Accurate Representation",
-        ),
-        Finding(
-            agent=AgentType.COMPLIANCE,
-            severity=Severity.WARNING,
-            title="Model names need context for non-technical audiences",
-            detail=(
-                "Mentioning 'Gemma 3n and FunctionGemma' is technically credible but may confuse non-technical investors. "
-                "The value proposition should come first."
-            ),
-            suggestion="Lead with: 'PitchPilot uses state-of-the-art on-device AI' before naming specific models.",
-            timestamp=112.0,
-            claim_id=claim_privacy.id,
-            policy_reference="Approved Messaging Guide — Technical Terminology",
-        ),
-        # Persona findings
-        Finding(
-            agent=AgentType.PERSONA,
-            severity=Severity.WARNING,
-            title="Skeptical Investor: differentiation is unclear",
-            detail=(
-                "After hearing the PitchPilot pitch, a skeptical investor would immediately ask "
-                "how this differs from a well-prompted ChatGPT plus screen recording. "
-                "The on-device angle is the key differentiator but it was mentioned only once, in passing."
-            ),
-            suggestion="Lead with the on-device / privacy differentiator earlier and repeat it at close. Emphasize that PitchPilot runs entirely locally, unlike ChatGPT which requires cloud access.",
-            timestamp=90.0,
-            persona="Skeptical Investor",
+            timestamp=23.0,
+            claim_id=claims[0].id,
+            policy_reference="Enterprise Data Policy §4.1",
         ),
         Finding(
             agent=AgentType.PERSONA,
             severity=Severity.INFO,
-            title="Technical Reviewer: model card details appreciated",
-            detail=(
-                "The Technical Reviewer persona found the mention of specific model names "
-                "(Gemma 3n, FunctionGemma) in the PitchPilot pitch credible and reassuring. "
-                "This demonstrates technical depth."
-            ),
-            timestamp=130.0,
+            title="Technical Reviewer: On-device inference latency?",
+            detail="Technical Reviewer wants specifics on inference latency for the 90-second claim.",
+            suggestion='Have concrete benchmarks ready: "On an M2 MacBook Pro: 90s for a 5-minute video, 4.2s/frame OCR, real-time audio."',
+            timestamp=29.0,
             persona="Technical Reviewer",
         ),
         Finding(
+            agent=AgentType.COACH,
+            severity=Severity.WARNING,
+            title="Abrupt demo-to-business-model transition at 0:33",
+            detail=(
+                "The transition from the live demo to the business model is jarring. "
+                "There is no bridging sentence, causing the audience to mentally context-switch without framing."
+            ),
+            suggestion="Add: \"What you just saw is the core product. Here's how we monetize it.\" before advancing the slide.",
+            timestamp=33.0,
+        ),
+        Finding(
+            agent=AgentType.COMPLIANCE,
+            severity=Severity.CRITICAL,
+            title='"Fully automated" conflicts with policy §3.2',
+            detail=(
+                'At 0:37 you claimed the workflow is "fully automated." '
+                "Policy §3.2 mandates that edge cases require manual human review."
+            ),
+            suggestion='Replace with: "Automated for 95% of standard cases; edge cases are flagged for manual review per our policy."',
+            timestamp=37.0,
+            claim_id=claims[1].id,
+            policy_reference="Enterprise Data Policy §3.2",
+        ),
+        Finding(
             agent=AgentType.PERSONA,
             severity=Severity.WARNING,
-            title="Procurement Manager: TCO and integration path not addressed",
+            title='Skeptical Investor: "Why not just use ChatGPT?"',
             detail=(
-                "No mention of three-year total cost of ownership or CRM integrations. "
-                "A Procurement Manager will block sign-off without this information."
+                "This question arose from generic AI differentiation framing on the traction slide. "
+                "The on-device angle has not been emphasised strongly enough."
             ),
-            suggestion="Add a slide covering per-seat pricing, implementation timeline, and current Salesforce/Gong integrations.",
-            timestamp=175.0,
-            persona="Procurement Manager",
+            suggestion='Prepare: "ChatGPT requires sending your pitch to the cloud. PitchPilot runs on-device with specialized models for each evaluation task."',
+            timestamp=44.0,
+            persona="Skeptical Investor",
+        ),
+        Finding(
+            agent=AgentType.COMPLIANCE,
+            severity=Severity.WARNING,
+            title="ROI claim lacks supporting data",
+            detail='At 0:47 you claimed "3x close rate improvement" without citing a source or pilot data.',
+            suggestion='Add source: cite pilot customer or qualify as "hypothesis to be validated in pilot."',
+            timestamp=47.0,
+            claim_id=claims[2].id,
+            policy_reference="See traction slide",
         ),
     ]
 
@@ -246,22 +203,50 @@ def _demo_findings(claims: list[Claim]) -> list[Finding]:
 def _demo_persona_questions() -> list[PersonaQuestion]:
     return [
         PersonaQuestion(
-            persona="ops_manager",
-            question="That's a bold claim – can you specifically detail the data mapping and transformation processes required to ensure accurate, real-time synchronization between this system and *both* SAP and Oracle, and what's the estimated timeline and cost for that integration?",
-            timestamp=85.0,
+            persona="Skeptical Investor",
+            question="How is this meaningfully different from asking ChatGPT to review my pitch script?",
+            follow_up=(
+                "Three key differences: on-device privacy (no data leaves the machine), "
+                "multimodal analysis (video + slides + audio, not just text), and specialized "
+                "models fine-tuned for pitch evaluation rather than general conversation."
+            ),
+            timestamp=44.0,
             difficulty=Severity.CRITICAL,
         ),
         PersonaQuestion(
-            persona="investor",
-            question="Guaranteeing ROI is a bold claim – can you quantify what 'ROI' actually means for a typical InstaLILY customer and demonstrate how you've achieved this consistently across at least three separate case studies?",
-            timestamp=108.0,
+            persona="Skeptical Investor",
+            question="What is your go-to-market strategy and why will enterprise sales teams adopt this?",
+            follow_up=(
+                "Focus on compliance-sensitive industries (fintech, healthcare) where "
+                "on-device is a requirement, not a feature."
+            ),
+            difficulty=Severity.WARNING,
+        ),
+        PersonaQuestion(
+            persona="Technical Reviewer",
+            question="What is the actual end-to-end latency on consumer hardware? Have you measured it?",
+            follow_up="M2 MacBook Pro: 87s for a 5-min video. M1: ~2min. Windows with CUDA: ~45s.",
+            timestamp=29.0,
+            difficulty=Severity.WARNING,
+        ),
+        PersonaQuestion(
+            persona="Procurement Manager",
+            question="What's the all-in cost over three years, and do you have a reference customer with measurable ROI?",
+            follow_up=(
+                "Annual per-seat SaaS with no implementation fee. Design partners report 18% lift "
+                "in first-call conversion and 40% fewer manager coaching hours. Happy to connect "
+                "you with two reference customers."
+            ),
             difficulty=Severity.CRITICAL,
         ),
         PersonaQuestion(
-            persona="cto",
-            question="That's a bold claim. Can you detail the specific on-device machine learning model architecture you're utilizing, and how you've addressed potential privacy concerns related to continuous sales data collection?",
-            timestamp=155.0,
-            difficulty=Severity.CRITICAL,
+            persona="Technical Reviewer",
+            question="Why FunctionGemma for routing instead of a simpler classifier?",
+            follow_up=(
+                "FunctionGemma was designed specifically for function dispatch with structured output. "
+                "A classifier would require separate handling of argument extraction."
+            ),
+            difficulty=Severity.INFO,
         ),
     ]
 
@@ -271,33 +256,32 @@ def _demo_report(session_id: UUID, claims: list[Claim], findings: list[Finding])
         DimensionScore(
             dimension="Clarity",
             score=78,
-            rationale="Structure and flow are solid but two transitions need bridging.",
+            rationale="Clear problem statement; solution slides are dense with jargon.",
         ),
         DimensionScore(
             dimension="Compliance",
             score=61,
-            rationale="Two critical policy conflicts found; addressable with rewording.",
+            rationale='Two claims directly conflict with policy doc. "Fully automated" and "fully private" need qualification.',
         ),
         DimensionScore(
             dimension="Defensibility",
-            score=68,
-            rationale="Speed and uptime claims need benchmark citations.",
+            score=74,
+            rationale="Investor persona questions are answerable but require better data. Technical objections are solid.",
         ),
         DimensionScore(
             dimension="Persuasiveness",
-            score=82,
-            rationale="Opening hook and model specificity are strong trust signals.",
+            score=81,
+            rationale="Strong open and close. Demo transition at 0:33 is rough — tighten the segue.",
         ),
     ]
-    overall = round(sum(d.score for d in dimensions) / len(dimensions))
     score = ReadinessScore(
-        overall=overall,
+        overall=72,
         dimensions=dimensions,
         priority_fixes=[
-            "Fix the 'fully automated' claim about PitchPilot — it directly contradicts Enterprise Data Policy §3.2.",
-            "Demonstrate the real-time coaching feature with a live demo or video.",
-            "Clarify the on-device privacy claim: specify that all analysis runs locally, not just storage.",
-            "Add a bridge sentence between the problem slide and the PitchPilot demo.",
+            'Qualify the "fully private" claim on slide 4: add "by default" or "when configured with on-device mode".',
+            'Replace "fully automated" with "automated for standard cases, with optional manual review for edge cases" to align with policy §3.2.',
+            "Add a one-sentence bridge between the live demo and the business model slide (currently jumps too abruptly at 0:33).",
+            'Prepare a crisp ≤30-second answer to "How is this different from just using ChatGPT?"',
         ],
     )
     return ReadinessReport(
@@ -307,11 +291,10 @@ def _demo_report(session_id: UUID, claims: list[Claim], findings: list[Finding])
         persona_questions=_demo_persona_questions(),
         claims=claims,
         summary=(
-            "Overall readiness is 72/100. The PitchPilot pitch has a strong hook and credible technical "
-            "specificity, but two compliance conflicts need resolution before presenting to investors. "
-            "The privacy and automation claims are the highest-risk items. "
-            "Prepare for the ChatGPT differentiation question — it will come from every audience. "
-            "Consider adding a live demo of the real-time coaching feature to make it more tangible."
+            "Your pitch has strong narrative momentum and clear problem framing. "
+            "The main risks are an overreaching privacy claim on slide 4 and an abrupt transition "
+            "from the demo to the business model. The skeptical investor persona surfaces the "
+            "sharpest questions — prepare those answers before your next rehearsal."
         ),
         created_at=datetime.now(timezone.utc).isoformat(),
     )
@@ -348,49 +331,49 @@ def _demo_live_inroom_claims() -> list[Claim]:
         Claim(
             text="PitchPilot runs locally on your laptop because your sales playbook and pricing strategy cannot leave the device.",
             claim_type=ClaimType.PRIVACY,
-            timestamp=25.0,
+            timestamp=4.0,
             source="transcript",
             confidence=0.95,
         ),
         Claim(
             text="Our system integrates seamlessly with your existing CRM and ERP workflows including SAP and Oracle.",
             claim_type=ClaimType.FEATURE,
-            timestamp=48.0,
+            timestamp=7.0,
             source="transcript",
             confidence=0.88,
         ),
         Claim(
             text="We guarantee ROI within 90 days for every InstaLILY customer.",
             claim_type=ClaimType.METRIC,
-            timestamp=72.0,
+            timestamp=11.0,
             source="transcript",
             confidence=0.85,
         ),
         Claim(
             text="Our on-device model processes sales conversations in real time with no latency.",
             claim_type=ClaimType.FEATURE,
-            timestamp=95.0,
+            timestamp=14.0,
             source="transcript",
             confidence=0.90,
         ),
         Claim(
             text="We are the only company building domain-trained on-device sales coaching for distribution verticals.",
             claim_type=ClaimType.COMPARISON,
-            timestamp=118.0,
+            timestamp=17.0,
             source="transcript",
             confidence=0.82,
         ),
         Claim(
             text="Our finetuned FunctionGemma model outperforms base Gemma on enterprise sales objection detection.",
             claim_type=ClaimType.FEATURE,
-            timestamp=142.0,
+            timestamp=21.0,
             source="transcript",
             confidence=0.91,
         ),
         Claim(
             text="InstaLILY sales reps using PitchPilot will close 40% more enterprise deals.",
             claim_type=ClaimType.METRIC,
-            timestamp=165.0,
+            timestamp=24.0,
             source="transcript",
             confidence=0.87,
         ),
@@ -422,11 +405,11 @@ def _demo_live_inroom_findings(claims: list[Claim]) -> list[Finding]:
                 "for InstaLILY sales reps. The privacy angle is immediately clear."
             ),
             suggestion=None,
-            timestamp=15.0,
+            timestamp=2.0,
             live=True,
             cue_hint=None,
         ),
-        # Compliance — warning → earpiece cue at 0:48
+        # Compliance — warning → earpiece cue at 0:07
         Finding(
             agent=AgentType.COMPLIANCE,
             severity=Severity.WARNING,
@@ -437,12 +420,12 @@ def _demo_live_inroom_findings(claims: list[Claim]) -> list[Finding]:
                 "timeline, and cost."
             ),
             suggestion="Prepare detailed answers about ETL processes, data mapping, and integration timelines before making this claim.",
-            timestamp=48.0,
+            timestamp=7.0,
             claim_id=claim_integration.id,
             live=True,
             cue_hint="integration detail needed",
         ),
-        # Persona — critical → earpiece cue at 1:12
+        # Persona — critical → earpiece cue at 0:11
         Finding(
             agent=AgentType.PERSONA,
             severity=Severity.CRITICAL,
@@ -452,12 +435,12 @@ def _demo_live_inroom_findings(claims: list[Claim]) -> list[Finding]:
                 "They need specifics on data mapping, transformation processes, timeline, and cost."
             ),
             suggestion="Be ready with: phased integration strategy, ETL tool details, 6-8 week pilot timeline, $15K-$30K cost estimate.",
-            timestamp=72.0,
+            timestamp=11.0,
             persona="ops_manager",
             live=True,
             cue_hint="integration question likely",
         ),
-        # Persona — critical → earpiece cue at 1:35
+        # Persona — critical → earpiece cue at 0:14
         Finding(
             agent=AgentType.PERSONA,
             severity=Severity.CRITICAL,
@@ -467,7 +450,7 @@ def _demo_live_inroom_findings(claims: list[Claim]) -> list[Finding]:
                 "quantitatively and see case studies demonstrating consistent achievement."
             ),
             suggestion="Prepare: define ROI as 15-20% increase in close rates, reference beta testing data, offer to share case studies post-demo.",
-            timestamp=95.0,
+            timestamp=14.0,
             persona="investor",
             live=True,
             cue_hint="ROI question incoming",
@@ -482,12 +465,12 @@ def _demo_live_inroom_findings(claims: list[Claim]) -> list[Finding]:
                 "PitchPilot from batch-processing alternatives."
             ),
             suggestion=None,
-            timestamp=98.0,
+            timestamp=15.0,
             claim_id=claim_realtime.id,
             live=True,
             cue_hint=None,
         ),
-        # Compliance — warning → earpiece cue at 2:22
+        # Compliance — warning → earpiece cue at 0:21
         Finding(
             agent=AgentType.COMPLIANCE,
             severity=Severity.WARNING,
@@ -497,7 +480,7 @@ def _demo_live_inroom_findings(claims: list[Claim]) -> list[Finding]:
                 "concerns around continuous sales data collection are addressed."
             ),
             suggestion="Prepare: FunctionGemma architecture details, federated learning approach, encryption (in transit and at rest), data anonymization policy, opt-out controls.",
-            timestamp=142.0,
+            timestamp=21.0,
             persona="cto",
             live=True,
             cue_hint="technical deep dive likely",
@@ -512,7 +495,7 @@ def _demo_live_inroom_findings(claims: list[Claim]) -> list[Finding]:
                 "deal size, sales cycle duration, and customer acquisition costs."
             ),
             suggestion="Add context: 'Based on simulations and beta testing with InstaLILY's typical sales cycle and deal size.'",
-            timestamp=168.0,
+            timestamp=25.0,
             claim_id=claim_deals.id,
             live=True,
             cue_hint=None,
@@ -526,7 +509,7 @@ def _demo_live_remote_claims() -> list[Claim]:
         Claim(
             text="PitchPilot analyzes your pitch in 90 seconds — fully automated, no manual review required.",
             claim_type=ClaimType.FEATURE,
-            timestamp=45.0,
+            timestamp=4.0,
             source="both",
             slide_number=2,
             confidence=0.93,
@@ -534,7 +517,7 @@ def _demo_live_remote_claims() -> list[Claim]:
         Claim(
             text="PitchPilot runs entirely on-device — your pitch data never leaves your computer.",
             claim_type=ClaimType.PRIVACY,
-            timestamp=130.0,
+            timestamp=12.0,
             source="slide",
             slide_number=4,
             confidence=0.89,
@@ -542,7 +525,7 @@ def _demo_live_remote_claims() -> list[Claim]:
         Claim(
             text="We use Gemma 3n and FunctionGemma — state-of-the-art on-device AI models.",
             claim_type=ClaimType.FEATURE,
-            timestamp=200.0,
+            timestamp=19.0,
             source="both",
             slide_number=4,
             confidence=0.91,
@@ -550,7 +533,7 @@ def _demo_live_remote_claims() -> list[Claim]:
         Claim(
             text="PitchPilot provides real-time coaching cues during live presentations.",
             claim_type=ClaimType.FEATURE,
-            timestamp=255.0,
+            timestamp=24.0,
             source="transcript",
             slide_number=6,
             confidence=0.81,
@@ -558,7 +541,7 @@ def _demo_live_remote_claims() -> list[Claim]:
         Claim(
             text="PitchPilot setup takes under one hour for any user.",
             claim_type=ClaimType.FEATURE,
-            timestamp=330.0,
+            timestamp=31.0,
             source="slide",
             slide_number=7,
             confidence=0.76,
@@ -584,15 +567,15 @@ def _demo_live_remote_findings(claims: list[Claim]) -> list[Finding]:
             severity=Severity.INFO,
             title="Opening hook strong — preserve for all audiences",
             detail=(
-                "The opening 45 seconds established clear stakes and framed the problem PitchPilot solves "
+                "The opening established clear stakes and framed the problem PitchPilot solves "
                 "memorably. Screen share was smooth from the start."
             ),
             suggestion=None,
-            timestamp=15.0,
+            timestamp=1.0,
             live=True,
             cue_hint=None,
         ),
-        # Compliance — critical → overlay card at 0:45
+        # Compliance — critical → overlay card at 0:04
         Finding(
             agent=AgentType.COMPLIANCE,
             severity=Severity.CRITICAL,
@@ -603,13 +586,13 @@ def _demo_live_remote_findings(claims: list[Claim]) -> list[Finding]:
                 "This will derail a compliance-focused audience."
             ),
             suggestion="Rephrase to: 'PitchPilot is automated with optional human-in-the-loop review for high-stakes decisions.'",
-            timestamp=45.0,
+            timestamp=4.0,
             claim_id=claim_automated.id,
             policy_reference="Enterprise Data Policy §3.2 — Human Oversight Requirement",
             live=True,
             cue_hint="compliance risk",
         ),
-        # Coach — warning → overlay card at 2:10
+        # Coach — warning → overlay card at 0:12
         Finding(
             agent=AgentType.COACH,
             severity=Severity.WARNING,
@@ -620,11 +603,11 @@ def _demo_live_remote_findings(claims: list[Claim]) -> list[Finding]:
                 "Non-technical viewers on the call will disengage here."
             ),
             suggestion="Lead with the outcome ('PitchPilot analyzes your pitch in 90 seconds') before explaining the mechanism.",
-            timestamp=130.0,
+            timestamp=12.0,
             live=True,
             cue_hint="simplify slide",
         ),
-        # Compliance — warning → overlay card at 3:20
+        # Compliance — warning → overlay card at 0:19
         Finding(
             agent=AgentType.COMPLIANCE,
             severity=Severity.WARNING,
@@ -634,7 +617,7 @@ def _demo_live_remote_findings(claims: list[Claim]) -> list[Finding]:
                 "about how PitchPilot processes data locally. Does this include model inference, or just storage?"
             ),
             suggestion="Clarify: 'All pitch analysis runs locally on your device. No video or transcript data is sent to external servers.'",
-            timestamp=200.0,
+            timestamp=19.0,
             claim_id=claim_privacy.id,
             policy_reference="Privacy Disclosure Policy §1.1 — Accurate Representation",
             live=True,
@@ -649,12 +632,12 @@ def _demo_live_remote_findings(claims: list[Claim]) -> list[Finding]:
                 "The Technical Reviewer persona found the mention of Gemma 3n, "
                 "FunctionGemma, and LoRA fine-tuning in the PitchPilot pitch reassuring and technically credible."
             ),
-            timestamp=270.0,
+            timestamp=26.0,
             persona="Technical Reviewer",
             live=True,
             cue_hint=None,
         ),
-        # Coach — critical → overlay card at 4:15
+        # Coach — critical → overlay card at 0:24
         Finding(
             agent=AgentType.COACH,
             severity=Severity.CRITICAL,
@@ -664,12 +647,12 @@ def _demo_live_remote_findings(claims: list[Claim]) -> list[Finding]:
                 "Technical reviewers on the call will immediately ask how PitchPilot's coaching works."
             ),
             suggestion="Add a live demo or video showing PitchPilot's earpiece cues during a presentation.",
-            timestamp=255.0,
+            timestamp=24.0,
             claim_id=claim_coaching.id,
             live=True,
             cue_hint="demonstrate coaching",
         ),
-        # Persona — warning → overlay card at 5:00
+        # Persona — warning → overlay card at 0:28
         Finding(
             agent=AgentType.PERSONA,
             severity=Severity.WARNING,
@@ -679,12 +662,12 @@ def _demo_live_remote_findings(claims: list[Claim]) -> list[Finding]:
                 "a compliance-aware GPT-4o wrapper. Expect this question from investors."
             ),
             suggestion="Prepare: 'ChatGPT requires sending your pitch to the cloud and has no sales-specific fine-tuning. PitchPilot runs entirely locally.'",
-            timestamp=300.0,
+            timestamp=28.0,
             persona="Skeptical Investor",
             live=True,
             cue_hint="ChatGPT pushback likely",
         ),
-        # Coach — warning → overlay card at 6:10
+        # Coach — warning → overlay card at 0:35
         Finding(
             agent=AgentType.COACH,
             severity=Severity.WARNING,
@@ -694,11 +677,11 @@ def _demo_live_remote_findings(claims: list[Claim]) -> list[Finding]:
                 "No bridging sentence to orient the audience."
             ),
             suggestion="Add: 'What you just saw is PitchPilot's core product. Here's how we monetize it.'",
-            timestamp=370.0,
+            timestamp=35.0,
             live=True,
             cue_hint="add bridge",
         ),
-        # Compliance — warning → overlay card at 6:45
+        # Compliance — warning → overlay card at 0:38
         Finding(
             agent=AgentType.COMPLIANCE,
             severity=Severity.WARNING,
@@ -708,23 +691,23 @@ def _demo_live_remote_findings(claims: list[Claim]) -> list[Finding]:
                 "The value proposition should come first."
             ),
             suggestion="Lead with: 'PitchPilot uses state-of-the-art on-device AI' before naming specific models.",
-            timestamp=405.0,
+            timestamp=38.0,
             claim_id=claim_models.id,
             policy_reference="Approved Messaging Guide — Technical Terminology",
             live=True,
             cue_hint="simplify model names",
         ),
-        # Persona — warning → overlay card at 7:20
+        # Persona — warning → overlay card at 0:42
         Finding(
             agent=AgentType.PERSONA,
             severity=Severity.WARNING,
             title="Procurement Manager: TCO and integration path not addressed",
             detail=(
-                "Eight minutes in and no mention of three-year cost or CRM integrations. "
+                "42 seconds in and no mention of three-year cost or CRM integrations. "
                 "A Procurement Manager will block sign-off without this — address it before close."
             ),
             suggestion="Add a slide covering per-seat pricing, implementation timeline, and Salesforce/Gong integrations.",
-            timestamp=440.0,
+            timestamp=42.0,
             persona="Procurement Manager",
             live=True,
             cue_hint="address TCO",
@@ -739,7 +722,7 @@ def _demo_live_remote_findings(claims: list[Claim]) -> list[Finding]:
                 "enterprise deployments typically require IT approval cycles. Worth qualifying."
             ),
             suggestion="Add 'for standard single-user deployment' to the one-hour claim.",
-            timestamp=330.0,
+            timestamp=31.0,
             claim_id=claim_setup.id,
             live=True,
             cue_hint=None,
@@ -863,7 +846,7 @@ async def _run_mock_live_finalization(session_id: UUID, mode: SessionMode) -> No
         ]
         claims_fn = _demo_live_inroom_claims
         findings_fn = _demo_live_inroom_findings
-        duration = 322.0   # 5:22
+        duration = 47.0   # 0:47
         cues = 3
     else:
         stages = [
@@ -879,7 +862,7 @@ async def _run_mock_live_finalization(session_id: UUID, mode: SessionMode) -> No
         ]
         claims_fn = _demo_live_remote_claims
         findings_fn = _demo_live_remote_findings
-        duration = 495.0   # 8:15
+        duration = 47.0   # 0:47
         cues = 8
 
     for progress, message in stages:

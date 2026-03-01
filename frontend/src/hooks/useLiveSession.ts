@@ -147,6 +147,20 @@ const MOCK_OBJECTION_CARDS: Omit<ObjectionCard, 'id'>[] = [
 let _mockIdCounter = 0;
 const mockId = () => `live-${++_mockIdCounter}`;
 
+/**
+ * Returns true if a cue at the given severity should be delivered at the
+ * current sensitivity level.
+ *
+ *   high   → all cues (critical + warning + info)
+ *   medium → critical + warning only
+ *   low    → critical only
+ */
+function _cuePassesSensitivity(severity: string, level: CueSensitivity): boolean {
+  if (level === 'high') return true;
+  if (level === 'medium') return severity === 'critical' || severity === 'warning';
+  return severity === 'critical';
+}
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -218,6 +232,7 @@ export function useLiveSession(): UseLiveSessionReturn {
   const wsRef = useRef<WebSocket | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const frameIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const audioIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timerIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const videoElRef = useRef<HTMLVideoElement | null>(null);
@@ -225,9 +240,57 @@ export function useLiveSession(): UseLiveSessionReturn {
   const sessionModeRef = useRef<SessionMode>('live');
   const mockIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const mockIndexRef = useRef(0);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const mutedRef = useRef(muted);
+  const sensitivityRef = useRef(sensitivity);
+
+  // Keep refs in sync with state so the playback callback reads fresh values
+  useEffect(() => { mutedRef.current = muted; }, [muted]);
+  useEffect(() => { sensitivityRef.current = sensitivity; }, [sensitivity]);
+
+  /**
+   * Play a base64-encoded audio blob through the earpiece.
+   * Supports WAV, AIFF, MP3, and Opus — browsers handle the decoding.
+   * Returns immediately if muted or if audio_b64 is null.
+   */
+  const playEarpieceAudio = useCallback((audio_b64: string | null) => {
+    if (!audio_b64 || mutedRef.current) return;
+
+    try {
+      const raw = atob(audio_b64);
+      const buf = new Uint8Array(raw.length);
+      for (let i = 0; i < raw.length; i++) buf[i] = raw.charCodeAt(i);
+
+      if (!audioCtxRef.current) {
+        audioCtxRef.current = new AudioContext();
+      }
+      const ctx = audioCtxRef.current;
+      if (ctx.state === 'suspended') ctx.resume();
+
+      ctx.decodeAudioData(buf.buffer.slice(0))
+        .then((decoded) => {
+          const src = ctx.createBufferSource();
+          src.buffer = decoded;
+          src.connect(ctx.destination);
+          src.start(0);
+        })
+        .catch(() => {
+          // Fallback: use an HTMLAudioElement with a data URI
+          const blob = new Blob([buf], { type: 'audio/wav' });
+          const url = URL.createObjectURL(blob);
+          const el = new Audio(url);
+          el.play().finally(() => URL.revokeObjectURL(url));
+        });
+    } catch {
+      // Decoding failed — text-only fallback (no-op)
+    }
+  }, []);
 
   // Cleanup helper
   const cleanup = useCallback(() => {
+    if (audioIntervalRef.current) clearInterval(audioIntervalRef.current);
+    audioIntervalRef.current = null;
+
     if (mediaRecorderRef.current?.state !== 'inactive') {
       try { mediaRecorderRef.current?.stop(); } catch { /* ignore */ }
     }
@@ -252,6 +315,11 @@ export function useLiveSession(): UseLiveSessionReturn {
 
     if (mediaStream) {
       mediaStream.getTracks().forEach((t) => t.stop());
+    }
+
+    if (audioCtxRef.current) {
+      audioCtxRef.current.close().catch(() => {});
+      audioCtxRef.current = null;
     }
   }, [mediaStream]);
 
@@ -288,13 +356,19 @@ export function useLiveSession(): UseLiveSessionReturn {
     let findingIdx = 0;
     let teleprompterIdx = 0;
     let objectionIdx = 0;
+    let lastFindingSec = 0;
     let lastTeleprompterSec = -20;
     let lastObjectionSec = -30;
 
-    // Emit first teleprompter immediately for remote mode
+    // Emit first teleprompter + objection immediately for remote mode
     if (sessionMode === 'live_remote') {
       setTeleprompterPoints(MOCK_TELEPROMPTER_SEQUENCES[0]);
       teleprompterIdx = 1;
+      if (MOCK_OBJECTION_CARDS.length > 0) {
+        setObjections([{ ...MOCK_OBJECTION_CARDS[0], id: mockId() }]);
+        objectionIdx = 1;
+        lastObjectionSec = 0;
+      }
     }
 
     mockIntervalRef.current = setInterval(() => {
@@ -313,8 +387,9 @@ export function useLiveSession(): UseLiveSessionReturn {
         transcriptIdx++;
       }
 
-      // Finding every ~8 seconds
-      if (findingIdx < MOCK_FINDINGS.length && now > 0 && now % 8 === 0) {
+      // Finding every ~8 seconds (elapsed-based, not modular arithmetic)
+      if (findingIdx < MOCK_FINDINGS.length && now - lastFindingSec >= 8) {
+        lastFindingSec = now;
         const raw = MOCK_FINDINGS[findingIdx];
         findingIdx++;
         const finding: Finding = { ...raw, id: mockId(), timestamp: now };
@@ -361,7 +436,10 @@ export function useLiveSession(): UseLiveSessionReturn {
             category: finding.agent,
             elapsed: now,
           };
-          setCues((prev) => [...prev, cue]);
+          if (_cuePassesSensitivity(cue.priority, sensitivityRef.current)) {
+            setCues((prev) => [cue, ...prev]);
+            playEarpieceAudio(cue.audio_b64);
+          }
         }
       }
 
@@ -388,7 +466,7 @@ export function useLiveSession(): UseLiveSessionReturn {
         setObjections((prev) => [...prev, { ...card, id: mockId() }]);
       }
     }, 3000);
-  }, [startTimer]);
+  }, [startTimer, playEarpieceAudio]);
 
   const endMockSession = useCallback(async () => {
     if (mockIntervalRef.current) clearInterval(mockIntervalRef.current);
@@ -577,7 +655,11 @@ export function useLiveSession(): UseLiveSessionReturn {
             category: msg.category ?? '',
             elapsed: msg.elapsed ?? 0,
           };
-          setCues((prev) => [...prev, cue]);
+          // Severity gate: filter by sensitivity setting
+          const pass = _cuePassesSensitivity(cue.priority, sensitivityRef.current);
+          if (!pass) break;
+          setCues((prev) => [cue, ...prev]);
+          playEarpieceAudio(cue.audio_b64);
           break;
         }
         // live_remote
@@ -638,37 +720,32 @@ export function useLiveSession(): UseLiveSessionReturn {
         ? 'audio/webm;codecs=opus'
         : 'audio/webm';
 
-      const recorder = new MediaRecorder(audioStream, { mimeType });
-      mediaRecorderRef.current = recorder;
-
-      // The first ondataavailable blob is the WebM init segment (EBML header +
-      // Tracks). Subsequent blobs are continuation segments with no EBML header,
-      // so ffmpeg/whisper can't decode them standalone. We capture the init
-      // segment and prepend it to every subsequent blob so each chunk sent to
-      // the backend is a fully-decodable WebM file.
-      let initSegment: ArrayBuffer | null = null;
-
-      recorder.ondataavailable = (e) => {
-        if (e.data.size === 0) return;
-        e.data.arrayBuffer().then((buf) => {
-          if (initSegment === null) {
-            // First chunk — this IS the init segment; save and send as-is.
-            initSegment = buf;
-            sendBinary(MSG_AUDIO, buf);
-          } else {
-            // Continuation segment — prepend init segment so the backend gets
-            // a self-contained WebM file it can hand directly to ffmpeg/whisper.
-            const combined = new Uint8Array(initSegment.byteLength + buf.byteLength);
-            combined.set(new Uint8Array(initSegment), 0);
-            combined.set(new Uint8Array(buf), initSegment.byteLength);
-            sendBinary(MSG_AUDIO, combined.buffer);
-          }
-        });
+      // Each recorder.stop() fires ondataavailable with a *complete*, self-contained
+      // WebM file (EBML header + Tracks + Clusters). Starting a fresh MediaRecorder
+      // every 2 s avoids the continuation-segment problem where subsequent chunks
+      // have no EBML header and can't be decoded independently by ffmpeg/whisper.
+      const startNewRecorder = () => {
+        const rec = new MediaRecorder(audioStream, { mimeType });
+        mediaRecorderRef.current = rec;
+        rec.ondataavailable = (e) => {
+          if (e.data.size === 0) return;
+          e.data.arrayBuffer().then((buf) => sendBinary(MSG_AUDIO, buf));
+        };
+        rec.start();
       };
 
-      recorder.start(2000);
+      startNewRecorder();
+
+      audioIntervalRef.current = setInterval(() => {
+        const current = mediaRecorderRef.current;
+        if (!current || current.state !== 'recording') return;
+        // stop() triggers ondataavailable → send the complete chunk, then
+        // onstop fires → start a fresh recorder for the next window.
+        current.addEventListener('stop', startNewRecorder, { once: true });
+        current.stop();
+      }, 2000);
     }
-  }, [startTimer, startFrameCapture, sendBinary, cleanup, sessionId, state]);
+  }, [startTimer, startFrameCapture, sendBinary, cleanup, sessionId, state, playEarpieceAudio]);
 
   // -------------------------------------------------------------------------
   // Public API
@@ -714,6 +791,9 @@ export function useLiveSession(): UseLiveSessionReturn {
       ws.send(JSON.stringify({ type: 'end_session' }));
       setState('finalizing');
     }
+
+    if (audioIntervalRef.current) clearInterval(audioIntervalRef.current);
+    audioIntervalRef.current = null;
 
     if (mediaRecorderRef.current?.state !== 'inactive') {
       try { mediaRecorderRef.current?.stop(); } catch { /* ignore */ }

@@ -195,7 +195,7 @@ export function SetupPage({ onStart, onStartDemo, onHome, initialMode }: Props) 
           </div>
           <div className="mt-3 pt-2 border-t-2 border-bg-border flex items-center justify-between">
             <span className="font-mono text-xs text-text-muted uppercase tracking-widest">
-              Three On-Device AI Agents
+              Scratch that verbal ITCH.
             </span>
             <span className="font-mono text-xs text-text-muted">
               Gemma&nbsp;3n · FunctionGemma · Gemma&nbsp;3&nbsp;4B

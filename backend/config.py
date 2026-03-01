@@ -126,11 +126,19 @@ class Settings(BaseSettings):
     )
 
     # ------------------------------------------------------------------
-    # Transcription fallback (mlx-whisper on Apple Silicon)
+    # Transcription engine (mlx-whisper on Apple Silicon)
     # ------------------------------------------------------------------
     whisper_model: str = Field(
         default="base",
         description="Whisper model size: tiny / base / small / medium / large",
+    )
+    transcription_primary: str = Field(
+        default="gemma",
+        description=(
+            "Primary transcription engine: 'gemma' (default, uses Gemma 3n) or "
+            "'whisper' (uses mlx-whisper first — much faster on Apple Silicon, "
+            "recommended for demos). Set PITCHPILOT_TRANSCRIPTION_PRIMARY=whisper."
+        ),
     )
 
     # ------------------------------------------------------------------
@@ -172,9 +180,41 @@ class Settings(BaseSettings):
             "Ollama is serial on GPU; keeping this at 1-2 avoids queue pile-up."
         ),
     )
+    claim_concurrency: int = Field(
+        default=2,
+        description=(
+            "Maximum number of concurrent claim-extraction Ollama requests. "
+            "Independent of ocr_concurrency so each stage can be tuned separately."
+        ),
+    )
+    claim_window_overlap: float = Field(
+        default=0.25,
+        description=(
+            "Fractional overlap between adjacent claim-extraction transcript windows "
+            "(0.0–0.5). Reducing below 0.25 cuts extraction LLM calls on long sessions; "
+            "existing Jaccard deduplication handles the small increase in boundary duplicates."
+        ),
+    )
     agent_concurrency: int = Field(
         default=3,
-        description="Maximum number of concurrent agent LLM calls per batch.",
+        description=(
+            "Maximum number of concurrent agent LLM calls per batch, and the upper bound "
+            "on simultaneous run_claim() dispatches in live mode."
+        ),
+    )
+    agent_min_confidence_coach: float = Field(
+        default=0.35,
+        description=(
+            "Minimum claim confidence required for the coach agent to analyse a claim. "
+            "Claims below this threshold are skipped rather than generating weak findings."
+        ),
+    )
+    agent_min_confidence_persona: float = Field(
+        default=0.5,
+        description=(
+            "Minimum claim confidence required for the persona agent to analyse a claim. "
+            "Persona generates 3× LLM calls per claim (one per persona), so the bar is higher."
+        ),
     )
     agent_per_call_timeout_seconds: float = Field(
         default=30.0,
@@ -206,14 +246,15 @@ class Settings(BaseSettings):
     # Live In-Room Mode — earpiece cue delivery
     # ------------------------------------------------------------------
     cue_min_interval_seconds: float = Field(
-        default=15.0,
+        default=8.0,
         description=(
             "Minimum gap (seconds) between successive earpiece cues. "
-            "Prevents cue flooding during fast-paced sections."
+            "Prevents cue flooding during fast-paced sections. "
+            "Tuned to 8s for responsive demo delivery; raise to 15s for production."
         ),
     )
     cue_dedup_window_seconds: float = Field(
-        default=60.0,
+        default=30.0,
         description=(
             "Sliding window (seconds) within which duplicate cue categories "
             "are suppressed."
@@ -290,6 +331,14 @@ DEFAULT_PERSONAS: list[str] = [
     "Technical Reviewer",
     "Procurement Manager",
 ]
+
+# Claim extraction tuning
+CLAIM_CONCURRENCY: int = settings.claim_concurrency
+CLAIM_WINDOW_OVERLAP: float = settings.claim_window_overlap
+
+# Per-agent confidence gates
+AGENT_MIN_CONFIDENCE_COACH: float = settings.agent_min_confidence_coach
+AGENT_MIN_CONFIDENCE_PERSONA: float = settings.agent_min_confidence_persona
 
 # Ollama / model settings (flat constants for easy import)
 OLLAMA_BASE_URL: str = settings.ollama_base_url

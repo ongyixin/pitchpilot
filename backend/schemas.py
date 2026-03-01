@@ -77,6 +77,7 @@ class Claim:
     slide_ref: Optional[str] = None  # e.g. "slide_3"
     context_before: str = ""  # surrounding text for richer agent prompts
     context_after: str = ""
+    confidence: float = 1.0  # extraction confidence [0, 1]
 
     def to_dict(self) -> dict[str, Any]:
         return {

@@ -23,6 +23,7 @@ The segments are guaranteed to be sorted by start_time and non-overlapping.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from pathlib import Path
@@ -76,6 +77,10 @@ class TranscriptionPipeline:
         """
         Transcribe an audio file and return ordered TranscriptSegment list.
 
+        Engine order is controlled by ``settings.transcription_primary``:
+        - ``"gemma"``   (default) — Gemma 3n first, mlx-whisper fallback
+        - ``"whisper"`` — mlx-whisper first (fast on Apple Silicon), Gemma fallback
+
         Args:
             audio: AudioTrack produced by the video pipeline.
 
@@ -88,25 +93,62 @@ class TranscriptionPipeline:
 
         logger.info(f"[transcribe] Transcribing {audio_path.name} ({audio.duration_seconds:.1f}s)")
 
-        # Try primary model first
-        try:
-            segments = await self._transcribe_with_model(audio)
-            if segments:
-                logger.info(f"[transcribe] Got {len(segments)} segments via {self._model.model_name}")
-                return segments
-            logger.warning("[transcribe] Primary model returned no segments")
-        except Exception as exc:
-            logger.warning(f"[transcribe] Primary model failed: {exc}")
+        use_whisper_first = (
+            not settings.mock_mode
+            and self._use_whisper_fallback
+            and settings.transcription_primary == "whisper"
+        )
 
-        # Whisper fallback
-        if self._use_whisper_fallback and not settings.mock_mode:
+        if use_whisper_first:
+            # Whisper primary — wrap sync call in executor to avoid blocking the event loop
+            whisper_error: Exception | None = None
             try:
-                segments = self._transcribe_with_whisper(audio)
+                loop = asyncio.get_event_loop()
+                segments = await loop.run_in_executor(None, self._transcribe_with_whisper, audio)
                 if segments:
-                    logger.info(f"[transcribe] Got {len(segments)} segments via whisper")
                     return segments
+                # Whisper decoded the audio but found no speech — this is normal for a
+                # silent 2-second live chunk.  Return empty rather than triggering the
+                # 35-50 s Gemma fallback, which would stall the entire receive loop.
+                logger.debug("[transcribe] Whisper returned no segments — silent chunk, skipping Gemma fallback")
+                return []
             except Exception as exc:
-                logger.warning(f"[transcribe] Whisper fallback failed: {exc}")
+                whisper_error = exc
+                logger.warning(f"[transcribe] Whisper primary failed: {exc}")
+
+            # Only fall back to Gemma when whisper threw an actual decode/runtime error,
+            # not when it simply reported no speech (handled above).
+            if whisper_error is not None:
+                try:
+                    segments = await self._transcribe_with_model(audio)
+                    if segments:
+                        logger.info(f"[transcribe] Got {len(segments)} segments via {self._model.model_name}")
+                        return segments
+                    logger.warning("[transcribe] Gemma fallback returned no segments")
+                except Exception as exc:
+                    logger.warning(f"[transcribe] Gemma fallback failed: {exc}")
+
+        else:
+            # Gemma primary (default)
+            try:
+                segments = await self._transcribe_with_model(audio)
+                if segments:
+                    logger.info(f"[transcribe] Got {len(segments)} segments via {self._model.model_name}")
+                    return segments
+                logger.warning("[transcribe] Primary model returned no segments")
+            except Exception as exc:
+                logger.warning(f"[transcribe] Primary model failed: {exc}")
+
+            # Whisper fallback
+            if self._use_whisper_fallback and not settings.mock_mode:
+                try:
+                    loop = asyncio.get_event_loop()
+                    segments = await loop.run_in_executor(None, self._transcribe_with_whisper, audio)
+                    if segments:
+                        logger.info(f"[transcribe] Got {len(segments)} segments via whisper")
+                        return segments
+                except Exception as exc:
+                    logger.warning(f"[transcribe] Whisper fallback failed: {exc}")
 
         # Final fallback: return a single segment with empty text so the
         # pipeline doesn't crash but the issue is visible in the output
@@ -147,14 +189,30 @@ class TranscriptionPipeline:
         """
         try:
             import mlx_whisper  # noqa: PLC0415
+        except ImportError:
+            logger.info("[transcribe] mlx-whisper not installed, skipping")
+            return []
 
+        try:
             logger.info(f"[transcribe] Running mlx-whisper ({settings.whisper_model})")
             result = mlx_whisper.transcribe(
                 audio.file_path,
                 path_or_hf_repo=f"mlx-community/whisper-{settings.whisper_model}-mlx",
+                # Lower the VAD threshold so short 2-second live chunks aren't
+                # silently discarded when speech probability is borderline.
+                no_speech_threshold=0.3,
+                # Don't condition on previous text — prevents hallucination loops
+                # across independent live audio chunks.
+                condition_on_previous_text=False,
+                language="en",
             )
 
             raw_segments = result.get("segments", [])
+            if not raw_segments:
+                logger.warning(
+                    f"[transcribe] mlx-whisper returned 0 segments for "
+                    f"{Path(audio.file_path).name} — audio may be silent or too short"
+                )
             segments: list[TranscriptSegment] = []
             for seg in raw_segments:
                 text = (seg.get("text") or "").strip()
@@ -181,8 +239,8 @@ class TranscriptionPipeline:
                 )
             return segments
 
-        except ImportError:
-            logger.info("[transcribe] mlx-whisper not installed, skipping")
+        except Exception as exc:
+            logger.warning(f"[transcribe] mlx-whisper failed: {exc}")
             return []
 
     def get_full_transcript(self, segments: list[TranscriptSegment]) -> str:

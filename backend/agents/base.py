@@ -37,14 +37,23 @@ class BaseAgent(ABC):
     Optional overrides:
       - system_prompt: str property (reads from prompts/ by default)
       - should_run(context, claim) → bool (gate logic for this agent)
+      - min_confidence: float class variable (skip claims below this threshold)
     """
 
     name: str = "base"
     prompt_file: Optional[Path] = None  # set in subclass to auto-load system prompt
 
+    # Subclasses set this to skip very low-confidence claims without any fallback.
+    # 0.0 means "run on everything" (the default for backward compatibility).
+    min_confidence: float = 0.0
+
+    # Class-level prompt cache: avoids re-reading the same prompt file across
+    # multiple agent instances (e.g. repeated Orchestrator instantiation in
+    # the upload pipeline).
+    _prompt_cache: dict[str, str] = {}
+
     def __init__(self, client: Optional[BaseTextModel] = None) -> None:
         self._client = client if client is not None else get_gemma3_adapter()
-        self._system_prompt: Optional[str] = None
         self._limiter = ConcurrencyLimiter(settings.agent_concurrency)
 
     @property
@@ -52,17 +61,20 @@ class BaseAgent(ABC):
         return settings.mock_mode
 
     # ------------------------------------------------------------------
-    # System prompt (loaded lazily from file)
+    # System prompt (loaded lazily, cached at class level)
     # ------------------------------------------------------------------
 
     @property
     def system_prompt(self) -> str:
-        if self._system_prompt is None:
-            if self.prompt_file and self.prompt_file.exists():
-                self._system_prompt = self.prompt_file.read_text()
+        if self.prompt_file is None:
+            return self._default_system_prompt()
+        key = str(self.prompt_file)
+        if key not in BaseAgent._prompt_cache:
+            if self.prompt_file.exists():
+                BaseAgent._prompt_cache[key] = self.prompt_file.read_text()
             else:
-                self._system_prompt = self._default_system_prompt()
-        return self._system_prompt
+                BaseAgent._prompt_cache[key] = self._default_system_prompt()
+        return BaseAgent._prompt_cache[key]
 
     def _default_system_prompt(self) -> str:
         """Minimal fallback if no prompt file is found."""
@@ -70,6 +82,22 @@ class BaseAgent(ABC):
             f"You are the {self.name} agent for PitchPilot. "
             "Analyze the provided pitch content and return structured JSON findings."
         )
+
+    # ------------------------------------------------------------------
+    # Confidence gate
+    # ------------------------------------------------------------------
+
+    def _passes_confidence_gate(self, claim: Optional[Claim]) -> bool:
+        """Return False if claim confidence is below this agent's threshold."""
+        if claim is None or self.min_confidence <= 0.0:
+            return True
+        passes = claim.confidence >= self.min_confidence
+        if not passes:
+            logger.debug(
+                f"{self.name} skipping claim {claim.id!r} — "
+                f"confidence {claim.confidence:.2f} < threshold {self.min_confidence:.2f}"
+            )
+        return passes
 
     # ------------------------------------------------------------------
     # Abstract interface
@@ -109,6 +137,9 @@ class BaseAgent(ABC):
         Returns a list of Finding objects. On model failure, falls back to
         mock_findings() so the system keeps running.
         """
+        if not self._passes_confidence_gate(claim):
+            return []
+
         if not self.should_run(context, claim):
             return []
 
@@ -116,6 +147,15 @@ class BaseAgent(ABC):
             return self.mock_findings(context, claim)
 
         prompt = self.build_prompt(context, claim)
+
+        # Scale the token budget to the claim's word count.  A short claim rarely
+        # needs 640 tokens of analysis; a long multi-sentence claim might.
+        # Floor at 128 (enough for 2-3 findings), ceiling at 640.
+        if claim is not None:
+            _words = len(claim.text.split())
+            max_tokens = max(128, min(640, 128 + 80 * _words))
+        else:
+            max_tokens = 640
 
         try:
             import json as _json
@@ -126,7 +166,7 @@ class BaseAgent(ABC):
                         prompt=prompt,
                         system=self.system_prompt,
                         response_format="json",
-                        max_tokens=640,
+                        max_tokens=max_tokens,
                     ),
                     timeout=timeout,
                 )

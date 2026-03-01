@@ -13,6 +13,7 @@ interface Props {
   report: ReadinessReport;
   sessionId: string;
   videoFile?: File;
+  videoSrc?: string;
   timeline?: TimelineAnnotation[];
   onReset: () => void;
 }
@@ -99,7 +100,7 @@ function computeGrade(overall: number): string {
 // Main ResultsPage
 // ---------------------------------------------------------------------------
 
-export function ResultsPage({ report, sessionId, videoFile, timeline = [], onReset }: Props) {
+export function ResultsPage({ report, sessionId, videoFile, videoSrc: videoSrcProp, timeline = [], onReset }: Props) {
   const playerRef = useRef<VideoPlayerHandle>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [activeSection, setActiveSection] = useState<'findings' | 'report'>('findings');
@@ -135,8 +136,8 @@ export function ResultsPage({ report, sessionId, videoFile, timeline = [], onRes
   }, [report, sessionId]);
 
   const videoSrc = useMemo(
-    () => (videoFile ? URL.createObjectURL(videoFile) : undefined),
-    [videoFile],
+    () => videoSrcProp ?? (videoFile ? URL.createObjectURL(videoFile) : undefined),
+    [videoSrcProp, videoFile],
   );
   const isLiveSession = report.session_mode != null && report.session_mode.startsWith('live');
 

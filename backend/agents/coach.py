@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from backend.agents.base import BaseAgent
-from backend.config import PROMPT_FILES
+from backend.config import AGENT_MIN_CONFIDENCE_COACH, PROMPT_FILES
 from backend.models.base import BaseTextModel
 from backend.schemas import Claim, Finding, PipelineContext
 
@@ -106,6 +106,7 @@ class CoachAgent(BaseAgent):
 
     name = "coach"
     prompt_file = PROMPT_FILES.get("coach_system")
+    min_confidence: float = AGENT_MIN_CONFIDENCE_COACH
 
     def __init__(self, client: Optional[BaseTextModel] = None) -> None:
         super().__init__(client)

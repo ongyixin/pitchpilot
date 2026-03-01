@@ -43,7 +43,7 @@ from typing import Optional
 
 from loguru import logger
 
-from backend.config import settings
+from backend.config import CLAIM_CONCURRENCY, CLAIM_WINDOW_OVERLAP, settings
 from backend.data_models import (
     Claim,
     ClaimCategory,
@@ -111,7 +111,7 @@ class ClaimExtractor:
     ):
         self._model = model or get_gemma3n_adapter()
         self._limiter = ConcurrencyLimiter(
-            claim_concurrency if claim_concurrency is not None else settings.ocr_concurrency
+            claim_concurrency if claim_concurrency is not None else CLAIM_CONCURRENCY
         )
         logger.info(f"[claims] Initialised with model: {self._model.model_name}")
 
@@ -320,7 +320,9 @@ def _build_transcript_windows(
         return [segments]
 
     windows: list[list[TranscriptSegment]] = []
-    step = window_secs * 0.75  # 25% overlap
+    # Overlap fraction comes from config (PITCHPILOT_CLAIM_WINDOW_OVERLAP).
+    # Lower overlap = fewer LLM extraction calls; Jaccard dedup absorbs boundary duplicates.
+    step = window_secs * (1.0 - CLAIM_WINDOW_OVERLAP)
     current_start = segments[0].start_time
 
     while current_start < segments[-1].end_time:

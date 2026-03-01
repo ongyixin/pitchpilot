@@ -21,7 +21,7 @@ import asyncio
 from typing import Any, Optional
 
 from backend.agents.base import BaseAgent
-from backend.config import DEFAULT_PERSONAS, PROMPT_FILES
+from backend.config import AGENT_MIN_CONFIDENCE_PERSONA, DEFAULT_PERSONAS, PROMPT_FILES, settings
 from backend.models.base import BaseTextModel
 from backend.schemas import Claim, Finding, PersonaQuestion, PipelineContext
 
@@ -200,6 +200,7 @@ class PersonaAgent(BaseAgent):
 
     name = "persona"
     prompt_file = PROMPT_FILES.get("persona_system")
+    min_confidence: float = AGENT_MIN_CONFIDENCE_PERSONA
 
     def __init__(self, client: Optional[BaseTextModel] = None) -> None:
         super().__init__(client)
@@ -254,21 +255,30 @@ class PersonaAgent(BaseAgent):
 
         async def _run_persona(persona_name: str) -> list[Finding]:
             import json as _json
+            import logging as _logging
             prompt = self.build_prompt(context, claim, persona=persona_name)
+            timeout = settings.agent_per_call_timeout_seconds
             try:
-                raw_str = await self._client.generate(
-                    prompt=prompt,
-                    system=self.system_prompt,
-                    response_format="json",
+                raw_str = await asyncio.wait_for(
+                    self._client.generate(
+                        prompt=prompt,
+                        system=self.system_prompt,
+                        response_format="json",
+                    ),
+                    timeout=timeout,
                 )
                 try:
                     raw = _json.loads(raw_str)
                 except _json.JSONDecodeError:
                     raw = {}
                 return self._parse_persona_response(raw, persona_name, claim)
+            except asyncio.TimeoutError:
+                _logging.getLogger(__name__).warning(
+                    f"Persona {persona_name!r} timed out after {timeout:.0f}s — skipping"
+                )
+                return []
             except Exception as e:
-                import logging
-                logging.getLogger(__name__).error(f"Persona {persona_name} error: {e}")
+                _logging.getLogger(__name__).error(f"Persona {persona_name} error: {e}")
                 return self._mock_persona_findings(persona_name, claim)
 
         results = await asyncio.gather(*[_run_persona(p) for p in personas], return_exceptions=True)

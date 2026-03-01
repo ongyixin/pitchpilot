@@ -18,9 +18,9 @@ Audio spec (Gemma 3n)
 ---------------------
 * Sample rate : 16 kHz mono
 * Max duration: ~30 s per call (6.25 tokens / second of audio)
-* Formats     : WAV or MP3 (WAV preferred; the pipeline already writes .webm
-  chunks — ``soundfile`` or ``librosa`` can resample if needed, but
-  ``torchaudio`` is used here for zero extra deps).
+* Formats     : any format supported by ffmpeg (WAV, WebM/Opus, MP3, AAC …).
+  Audio loading uses ffmpeg + stdlib wave — no torchaudio.load() because
+  torchaudio ≥ 2.6 requires the optional torchcodec package for all decoding.
 
 The adapter is loaded lazily on first use and kept in memory for the
 lifetime of the process (model weights are expensive to load).
@@ -74,6 +74,58 @@ _DEFAULT_HF_MODEL = "google/gemma-3n-e4b-it"
 _load_lock = threading.Lock()
 
 
+def _verify_gemma3n_audio_patch() -> None:
+    """
+    Guard against the transformers 5.2.0 bug where audio_mel_mask is accessed
+    on pooler_output (a plain Tensor) after the AudioEncoderModelOutput has
+    already been overwritten.
+
+    Reads the installed modeling_gemma3n.py and checks that the mask is
+    extracted BEFORE pooler_output assignment.  If not (i.e. the library was
+    reinstalled without the patch), re-applies the one-line fix automatically.
+
+    IMPORTANT: must be called BEFORE `from transformers import
+    Gemma3nForConditionalGeneration` so that the patched file is read when
+    Python first compiles the module.  If the module is somehow already in
+    sys.modules, it is reloaded so the fix takes effect in the running process.
+
+    Uses ``transformers.__file__`` to locate the modeling file without
+    triggering the submodule import (unlike find_spec on the full dotted path).
+    """
+    import importlib  # noqa: PLC0415
+    import sys  # noqa: PLC0415
+
+    try:
+        import transformers as _tf  # noqa: PLC0415
+        model_file = Path(_tf.__file__).parent / "models" / "gemma3n" / "modeling_gemma3n.py"
+    except ImportError:
+        return
+
+    if not model_file.exists():
+        return
+
+    src = model_file.read_text(encoding="utf-8")
+    buggy = "audio_features = audio_features.pooler_output\n            audio_mask = audio_features.audio_mel_mask"
+    fixed = "audio_mask = audio_features.audio_mel_mask  # save before overwriting (transformers 5.2.0 bug fix)\n            audio_features = audio_features.pooler_output"
+
+    if buggy in src:
+        logger.warning(
+            "[gemma3n_hf] Detected transformers 5.2.0 audio_mel_mask bug — patching in place"
+        )
+        model_file.write_text(src.replace(buggy, fixed), encoding="utf-8")
+        logger.info("[gemma3n_hf] Patch applied to modeling_gemma3n.py")
+
+        # If the module snuck into sys.modules before we could patch the file
+        # (e.g. another import path triggered it), reload it so the fix is live
+        # without requiring a full server restart.
+        module_key = "transformers.models.gemma3n.modeling_gemma3n"
+        if module_key in sys.modules:
+            logger.info("[gemma3n_hf] Reloading modeling_gemma3n to pick up patch")
+            importlib.reload(sys.modules[module_key])
+    elif fixed not in src:
+        logger.info("[gemma3n_hf] modeling_gemma3n.py audio fix already applied or not needed")
+
+
 @lru_cache(maxsize=1)
 def _load_model_and_processor(model_id: str):
     """
@@ -82,6 +134,10 @@ def _load_model_and_processor(model_id: str):
     Returns (model, processor). Cached so subsequent calls are free.
     Uses bfloat16 + MPS on Apple Silicon, CUDA if available, else CPU.
     """
+    # Must run BEFORE the transformers import below so that the patched file
+    # is what Python compiles when it first loads modeling_gemma3n.
+    _verify_gemma3n_audio_patch()
+
     import torch
     from transformers import AutoProcessor, Gemma3nForConditionalGeneration
 
@@ -129,25 +185,47 @@ def _load_audio_16k_mono(audio_path: str) -> np.ndarray:
     """
     Load an audio file and return a 1-D float32 numpy array at 16 kHz.
 
-    Supports WAV, WebM/Opus, MP3 via torchaudio (which uses ffmpeg as
-    backend on macOS).  Raises RuntimeError if torchaudio is unavailable.
+    Uses ffmpeg to decode any container (WAV, WebM/Opus, MP3, AAC, …) to a
+    raw 16-kHz mono PCM stream, then reads it with numpy.  This avoids a
+    dependency on torchaudio.load() which requires the optional torchcodec
+    package in torchaudio ≥ 2.6.
+
+    Raises RuntimeError if ffmpeg is not on PATH or conversion fails.
     """
+    import os  # noqa: PLC0415
+    import subprocess  # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
+    import wave as _wave  # noqa: PLC0415
+
+    tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+    tmp_path = tmp.name
+    tmp.close()
     try:
-        import torchaudio  # noqa: PLC0415
-        import torchaudio.functional as F  # noqa: PLC0415
-
-        waveform, sr = torchaudio.load(audio_path)
-        if sr != 16000:
-            waveform = F.resample(waveform, sr, 16000)
-        if waveform.shape[0] > 1:
-            waveform = waveform.mean(dim=0, keepdim=True)
-        return waveform.squeeze(0).numpy().astype(np.float32)
-
-    except ImportError:
-        raise RuntimeError(
-            "torchaudio is required for Gemma 3n audio input. "
-            "Install it with: pip install torchaudio"
+        result = subprocess.run(
+            [
+                "ffmpeg", "-y", "-i", audio_path,
+                "-ar", "16000", "-ac", "1",
+                "-sample_fmt", "s16",
+                "-f", "wav", tmp_path,
+            ],
+            capture_output=True,
+            timeout=30,
         )
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"ffmpeg conversion failed: {result.stderr.decode()[:300]}"
+            )
+
+        with _wave.open(tmp_path, "rb") as wf:
+            n_frames = wf.getnframes()
+            raw = wf.readframes(n_frames)
+
+        samples = np.frombuffer(raw, dtype=np.int16).astype(np.float32)
+        samples /= 32768.0  # normalise to [-1, 1]
+        return samples
+    finally:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
 
 
 # ---------------------------------------------------------------------------
@@ -189,7 +267,17 @@ class Gemma3nHFAdapter(BaseMultimodalModel):
             return_tensors="pt",
             add_generation_prompt=True,
         )
-        inputs = {k: v.to(model.device) if hasattr(v, "to") else v for k, v in inputs.items()}
+        model_dtype = next(model.parameters()).dtype
+        inputs = {
+            k: (
+                v.to(device=model.device, dtype=model_dtype)
+                if hasattr(v, "is_floating_point") and v.is_floating_point()
+                else v.to(model.device)
+                if hasattr(v, "to")
+                else v
+            )
+            for k, v in inputs.items()
+        }
 
         with torch.inference_mode():
             output_ids = model.generate(

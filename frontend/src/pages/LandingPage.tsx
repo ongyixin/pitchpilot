@@ -169,11 +169,14 @@ export function LandingPage({ onLaunch, onDemo, onGoLive }: Props) {
 
           {/* Deck */}
           <div className="py-5">
-            <p className="font-mono text-base text-text-primary font-bold leading-relaxed mb-2">
-              Are you ready to demo under scrutiny?
+            <p 
+              className="font-mono text-text-primary font-bold leading-tight mb-2"
+              style={{ fontSize: 'clamp(1rem, 3.5vw, 2.5rem)' }}
+            >
+              Scratch that verbal ITCH.
             </p>
-            <p className="font-mono text-base text-text-secondary leading-relaxed max-w-3xl">
-              Three specialised agents run entirely on your machine — evaluating clarity, compliance risk, and audience defensibility before you walk into the room.
+            <p className="font-mono text-sm text-text-secondary leading-relaxed whitespace-nowrap">
+              Three on-device agents evaluate clarity, compliance, and defensibility before you walk into the room.
             </p>
           </div>
         </div>

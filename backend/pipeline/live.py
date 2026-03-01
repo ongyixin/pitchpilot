@@ -259,10 +259,10 @@ class LivePipeline:
             # Lazy-load Gemma3 for teleprompter/objection_prep (remote mode only)
             if self.mode == "remote":
                 try:
-                    from backend.models.gemma3 import Gemma3Adapter  # noqa: PLC0415
-                    self._gemma3 = Gemma3Adapter()
+                    from backend.models.gemma3 import get_gemma3_adapter  # noqa: PLC0415
+                    self._gemma3 = get_gemma3_adapter()
                 except Exception as exc:
-                    logger.warning(f"[live] Could not load Gemma3Adapter: {exc}")
+                    logger.warning(f"[live] Could not load Gemma3 adapter: {exc}")
         self._report_gen = ReadinessReportGenerator()
         self._initialized = True
         logger.info(
@@ -362,11 +362,17 @@ class LivePipeline:
         frame_path.write_bytes(frame_bytes)
 
         try:
+            from PIL import Image as _PilImage  # noqa: PLC0415
             from backend.data_models import ExtractedFrame  # noqa: PLC0415
+            with _PilImage.open(io.BytesIO(frame_bytes)) as _img:
+                _w, _h = _img.size
             frame = ExtractedFrame(
                 file_path=str(frame_path),
                 frame_index=frame_index,
+                original_frame_number=frame_index,
                 timestamp=timestamp,
+                width=_w,
+                height=_h,
                 is_keyframe=True,
             )
             blocks = await self._ocr.process_frames([frame], keyframes_only=False)  # type: ignore[union-attr]
@@ -424,7 +430,7 @@ class LivePipeline:
             return []
 
         # Filter to only claims not already processed
-        unprocessed = [c for c in new_claims if c.id not in self._processed_claim_ids]
+        unprocessed = [c for c in new_claims if c.claim_id not in self._processed_claim_ids]
         if not unprocessed:
             return []
 
@@ -433,18 +439,29 @@ class LivePipeline:
         context = self._build_pipeline_context()
         new_findings: list[Finding] = []
 
-        for claim in unprocessed:
-            try:
-                schema_claim = _data_claim_to_schema(claim)
-                findings = await self._orchestrator.run_claim(context, schema_claim)
-                # Tag findings as live
-                for f in findings:
-                    f.timestamp = claim.timestamp_start
-                new_findings.extend(findings)
-                self._processed_claim_ids.add(claim.id)
-                self._all_claims.append(claim)
-            except Exception as exc:
-                logger.error(f"[live] Claim routing failed for '{claim.text[:40]}': {exc}")
+        # Dispatch all new claims concurrently.  The semaphore inside
+        # run_claim() bounds how many actually hit Ollama simultaneously, so
+        # this gather doesn't overwhelm the GPU queue.
+        async def _dispatch_claim(claim):
+            schema_claim = _data_claim_to_schema(claim)
+            findings = await self._orchestrator.run_claim(context, schema_claim)
+            for f in findings:
+                f.timestamp = claim.timestamp_start
+            return claim, findings
+
+        dispatch_results = await asyncio.gather(
+            *[_dispatch_claim(c) for c in unprocessed],
+            return_exceptions=True,
+        )
+
+        for result in dispatch_results:
+            if isinstance(result, Exception):
+                logger.error(f"[live] Claim routing failed: {result}")
+                continue
+            claim, findings = result
+            new_findings.extend(findings)
+            self._processed_claim_ids.add(claim.claim_id)
+            self._all_claims.append(claim)
 
         self._all_findings.extend(new_findings)
         logger.info(f"[live] Cycle complete | new_findings={len(new_findings)}")
@@ -524,7 +541,8 @@ class LivePipeline:
         """
         Generate 2-3 talking points for the current slide using Gemma 3.
 
-        Returns an empty list if there is not enough context yet.
+        Falls back to rotating mock points when Gemma3 is unavailable or the
+        model call fails, so the presenter panel is never empty.
         """
         if not self._initialized:
             await self.initialize()
@@ -537,40 +555,39 @@ class LivePipeline:
         slide_context = self.current_slide_text()
         recent_transcript = self.recent_transcript_tail(30.0)
 
-        if not slide_context and not recent_transcript:
-            return []
+        if self._gemma3 is not None and (slide_context or recent_transcript):
+            try:
+                system_prompt = (PROMPTS_DIR / "teleprompter.txt").read_text()
+                user_prompt = (
+                    f"slide_context: {slide_context or '(no slide visible)'}\n\n"
+                    f"recent_transcript: {recent_transcript or '(presenter has not spoken yet)'}"
+                )
+                raw = await self._gemma3.generate(
+                    prompt=user_prompt,
+                    system=system_prompt,
+                    temperature=0.4,
+                    max_tokens=400,
+                    response_format="json",
+                )
+                data = json.loads(raw)
+                points = data.get("points", [])
+                if isinstance(points, list) and points:
+                    return [str(p) for p in points[:3]]
+            except Exception as exc:
+                logger.warning(f"[live] Teleprompter generation failed, using fallback: {exc}")
 
-        if self._gemma3 is None:
-            logger.warning("[live] Gemma3 not available for teleprompter generation")
-            return []
-
-        try:
-            system_prompt = (PROMPTS_DIR / "teleprompter.txt").read_text()
-            user_prompt = (
-                f"slide_context: {slide_context or '(no slide visible)'}\n\n"
-                f"recent_transcript: {recent_transcript or '(presenter has not spoken yet)'}"
-            )
-            raw = await self._gemma3.generate(
-                prompt=user_prompt,
-                system=system_prompt,
-                temperature=0.4,
-                max_tokens=400,
-                response_format="json",
-            )
-            data = json.loads(raw)
-            points = data.get("points", [])
-            if isinstance(points, list):
-                return [str(p) for p in points[:3]]
-        except Exception as exc:
-            logger.warning(f"[live] Teleprompter generation failed: {exc}")
-
-        return []
+        # Fallback: cycle through mock teleprompter sequences so the
+        # presenter panel always has content.
+        idx = self._mock_teleprompter_index % len(_MOCK_TELEPROMPTER_POINTS)
+        self._mock_teleprompter_index += 1
+        return _MOCK_TELEPROMPTER_POINTS[idx]
 
     async def generate_objection_prep(self) -> list[dict]:
         """
         Generate 2-3 likely audience questions with suggested answers.
 
-        Returns a list of dicts with keys: question, suggested_answer, persona, difficulty.
+        Falls back to rotating mock objections when Gemma3 is unavailable or
+        the model call fails, so the presenter panel is never empty.
         """
         if not self._initialized:
             await self.initialize()
@@ -580,48 +597,46 @@ class LivePipeline:
             self._mock_objection_index += 1
             return _MOCK_OBJECTIONS[idx]
 
-        if not self._all_claims:
-            return []
+        if self._gemma3 is not None and self._all_claims:
+            try:
+                system_prompt = (PROMPTS_DIR / "objection_prep.txt").read_text()
+                recent_claims = self._all_claims[-8:]
+                claims_text = "\n".join(f"- {c.text}" for c in recent_claims)
+                personas_text = ", ".join(self.personas) if self.personas else "General audience"
+                slide_context = self.current_slide_text()
+                user_prompt = (
+                    f"personas: {personas_text}\n\n"
+                    f"recent_claims:\n{claims_text}\n\n"
+                    f"slide_context: {slide_context or '(unavailable)'}"
+                )
+                raw = await self._gemma3.generate(
+                    prompt=user_prompt,
+                    system=system_prompt,
+                    temperature=0.5,
+                    max_tokens=600,
+                    response_format="json",
+                )
+                data = json.loads(raw)
+                questions = data.get("questions", [])
+                if isinstance(questions, list) and questions:
+                    return [
+                        {
+                            "question": str(q.get("question", "")),
+                            "suggested_answer": str(q.get("suggested_answer", "")),
+                            "persona": str(q.get("persona", "")),
+                            "difficulty": str(q.get("difficulty", "medium")),
+                        }
+                        for q in questions[:3]
+                        if q.get("question")
+                    ]
+            except Exception as exc:
+                logger.warning(f"[live] Objection prep generation failed, using fallback: {exc}")
 
-        if self._gemma3 is None:
-            logger.warning("[live] Gemma3 not available for objection_prep generation")
-            return []
-
-        try:
-            system_prompt = (PROMPTS_DIR / "objection_prep.txt").read_text()
-            recent_claims = self._all_claims[-8:]  # last 8 claims
-            claims_text = "\n".join(f"- {c.text}" for c in recent_claims)
-            personas_text = ", ".join(self.personas) if self.personas else "General audience"
-            slide_context = self.current_slide_text()
-            user_prompt = (
-                f"personas: {personas_text}\n\n"
-                f"recent_claims:\n{claims_text}\n\n"
-                f"slide_context: {slide_context or '(unavailable)'}"
-            )
-            raw = await self._gemma3.generate(
-                prompt=user_prompt,
-                system=system_prompt,
-                temperature=0.5,
-                max_tokens=600,
-                response_format="json",
-            )
-            data = json.loads(raw)
-            questions = data.get("questions", [])
-            if isinstance(questions, list):
-                return [
-                    {
-                        "question": str(q.get("question", "")),
-                        "suggested_answer": str(q.get("suggested_answer", "")),
-                        "persona": str(q.get("persona", "")),
-                        "difficulty": str(q.get("difficulty", "medium")),
-                    }
-                    for q in questions[:3]
-                    if q.get("question")
-                ]
-        except Exception as exc:
-            logger.warning(f"[live] Objection prep generation failed: {exc}")
-
-        return []
+        # Fallback: cycle through mock objection sets so the presenter
+        # panel always has prepared Q&A content.
+        idx = self._mock_objection_index % len(_MOCK_OBJECTIONS)
+        self._mock_objection_index += 1
+        return _MOCK_OBJECTIONS[idx]
 
     async def generate_script_suggestion(self, title: str, suggestion: str, reason: str) -> dict | None:
         """
@@ -760,7 +775,7 @@ def _data_claim_to_schema(claim) -> "Claim":
     from backend.schemas import Claim as SchemaClaim  # noqa: PLC0415
 
     return SchemaClaim(
-        id=str(claim.id) if hasattr(claim, "id") else str(uuid.uuid4())[:8],
+        id=claim.claim_id,
         text=claim.text,
         claim_type="general",
         timestamp=getattr(claim, "timestamp_start", None),
@@ -769,6 +784,7 @@ def _data_claim_to_schema(claim) -> "Claim":
         else str(getattr(claim, "source", "transcript")),
         context_before="",
         context_after="",
+        confidence=getattr(claim, "confidence", 1.0),
     )
 
 
